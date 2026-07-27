@@ -1,0 +1,42 @@
+# The default is self-contained for testing. For production, set minio.enabled=false,
+# create the cloud credential Secret yourself, and override velero.configuration.
+minio:
+  enabled: true
+  image: minio/minio:RELEASE.2024-10-29T16-01-48Z
+  storageClass: local-path
+  size: 10Gi
+  accessKey: w7panel-velero
+  secretKey: change-me-before-production
+  bucket: velero
+
+velero:
+  # CRDs are supplied by the dependency's crds/ directory. Avoid the redundant
+  # upgrade Job so a first install is not blocked on a second Velero image pull.
+  upgradeCRDs: false
+  credentials:
+    useSecret: true
+    existingSecret: cloud-credentials
+  configuration:
+    defaultBackupStorageLocation: default
+    defaultVolumesToFsBackup: false
+    backupStorageLocation:
+      - name: default
+        provider: aws
+        bucket: velero
+        default: true
+        credential:
+          name: cloud-credentials
+          key: cloud
+        config:
+          region: minio
+          s3ForcePathStyle: "true"
+          s3Url: http://w7panel-backup-minio.velero.svc:9000
+  initContainers:
+    - name: velero-plugin-for-aws
+      image: velero/velero-plugin-for-aws:v1.12.2
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - mountPath: /target
+          name: plugins
+  deployNodeAgent: false
+  snapshotsEnabled: false
