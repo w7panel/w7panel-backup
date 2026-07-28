@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
+import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -29,6 +29,13 @@ test('download request targets the complete backup archive', () => {
   const request = downloadRequestResource({ name: 'download-123', backupName: 'nightly-default' })
   assert.equal(request.spec.target.kind, 'BackupContents')
   assert.equal(request.spec.target.name, 'nightly-default')
+})
+
+test('only a public HTTPS object-storage endpoint can serve browser downloads', () => {
+  assert.equal(downloadEndpointIssue('https://cos.example.com'), '')
+  assert.match(downloadEndpointIssue('http://w7panel-backup-minio:9000'), /HTTPS/)
+  assert.match(downloadEndpointIssue('https://w7panel-backup-minio.default.svc'), /内网/)
+  assert.match(downloadEndpointIssue('https://10.0.0.10'), /内网/)
 })
 
 test('restore uses safe collision and cluster-resource defaults', () => {

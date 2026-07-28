@@ -94,6 +94,22 @@ export function downloadRequestResource({ name, backupName }) {
   }
 }
 
+function privateIpv4(host) {
+  const parts = host.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false
+  return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 || (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168)
+}
+
+export function downloadEndpointIssue(endpoint) {
+  try {
+    const url = new URL(String(endpoint || ''))
+    const host = url.hostname.toLowerCase()
+    if (url.protocol !== 'https:') return '下载需要浏览器可访问的 HTTPS S3/COS Endpoint'
+    if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.svc') || host.endsWith('.cluster.local') || privateIpv4(host) || host === '::1' || host.startsWith('fd')) return '当前对象存储地址为内网地址，无法在浏览器中下载'
+    return ''
+  } catch { return '请为存储位置配置有效的公网 HTTPS S3/COS Endpoint' }
+}
+
 export function restoreResource({ name, backupName, namespaces: selected, mapping = {} }) {
   if (!validName(name)) throw new Error('恢复名称必须为 63 字符以内的小写 DNS 名称')
   if (!backupName) throw new Error('请选择一个备份')
