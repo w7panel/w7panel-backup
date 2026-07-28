@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, ref, resolveComponent } from 'vue'
+import { computed, defineComponent, h, onMounted, onUnmounted, ref, resolveComponent } from 'vue'
 import { backupResource, create, createSecret, credentialsSecret, discoverResources, list, locationResource, namespaces, patchSecret, remove, restoreResource, scheduleResource, update } from './velero'
 
 const ScopePicker = defineComponent({ props: { modelValue: Array, items: Array }, emits: ['update:modelValue'], setup(props, { emit }) { const FormItem = resolveComponent('a-form-item'), Select = resolveComponent('a-select'); return () => h(FormItem, { label: '备份范围' }, { default: () => h(Select, { modelValue: props.modelValue, 'onUpdate:modelValue': value => emit('update:modelValue', value), options: (props.items || []).map(value => ({ label: value, value })), multiple: true, allowClear: true, placeholder: '留空表示全部命名空间' }) }) } })
@@ -73,7 +73,10 @@ const formatDate = value => value ? new Date(value).toLocaleString('zh-CN', { ho
 const statusColor = value => ({ Completed: 'green', PartiallyFailed: 'orange', Failed: 'red', FailedValidation: 'red', InProgress: 'arcoblue', New: 'gray' }[value] || 'gray')
 const resourceVersion = (resource, body) => ({ ...body, metadata: { ...body.metadata, namespace: veleroNamespace.value, ...(resource?.metadata?.resourceVersion ? { resourceVersion: resource.metadata.resourceVersion } : {}) } })
 function resetDialogs() { dialogs.value = { backup: false, restore: false, schedule: false, location: false } }
-async function load() { loading.value = true; error.value = ''; try { const [b, r, s, l, n] = await Promise.all([list(veleroNamespace.value, 'backups'), list(veleroNamespace.value, 'restores'), list(veleroNamespace.value, 'schedules'), list(veleroNamespace.value, 'backupstoragelocations'), namespaces()]); backups.value = b.items || []; restores.value = r.items || []; schedules.value = s.items || []; locations.value = l.items || []; namespaceNames.value = (n.items || []).map(item => item.metadata.name).sort(); ready.value = true } catch (cause) { ready.value = false; error.value = cause.message || '无法读取 Velero 资源' } finally { loading.value = false } }
+let refreshTimer
+const isRunning = item => !['Completed', 'PartiallyFailed', 'Failed', 'FailedValidation'].includes(item.status?.phase)
+function queueRefresh() { clearTimeout(refreshTimer); if ([...backups.value, ...restores.value].some(isRunning)) refreshTimer = window.setTimeout(load, 3000) }
+async function load() { if (loading.value) return; loading.value = true; error.value = ''; try { const [b, r, s, l, n] = await Promise.all([list(veleroNamespace.value, 'backups'), list(veleroNamespace.value, 'restores'), list(veleroNamespace.value, 'schedules'), list(veleroNamespace.value, 'backupstoragelocations'), namespaces()]); backups.value = b.items || []; restores.value = r.items || []; schedules.value = s.items || []; locations.value = l.items || []; namespaceNames.value = (n.items || []).map(item => item.metadata.name).sort(); ready.value = true; queueRefresh() } catch (cause) { ready.value = false; error.value = cause.message || '无法读取 Velero 资源' } finally { loading.value = false } }
 async function loadResourceOptions() { if (resourceOptions.value.length || resourceLoading.value) return; resourceLoading.value = true; try { resourceOptions.value = await discoverResources() } catch (cause) { error.value = `无法发现 Kubernetes 资源：${cause.message}` } finally { resourceLoading.value = false } }
 function openBackup() { backupForm.value = { name: formName('backup'), namespaceMode: 'include', namespaces: [], resourceMode: 'include', resources: [], storageLocation: defaultLocation.value, days: 30 }; dialogs.value.backup = true; loadResourceOptions() }
 function openRestore(backup) { restoreForm.value = { name: formName('restore'), backupName: backup.metadata.name, namespaces: backup.spec?.includedNamespaces?.filter(item => item !== '*') || [], mappingText: '' }; dialogs.value.restore = true }
@@ -88,4 +91,5 @@ async function saveLocation() { await savingAction(async () => { const current =
 async function destroy(resource, name) { await savingAction(async () => { await remove(veleroNamespace.value, resource, name); await load() }) }
 async function savingAction(action) { saving.value = true; error.value = ''; try { await action() } catch (cause) { error.value = cause.message || '操作失败' } finally { saving.value = false } }
 onMounted(load)
+onUnmounted(() => clearTimeout(refreshTimer))
 </script>
