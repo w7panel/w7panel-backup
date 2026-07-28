@@ -30,7 +30,9 @@ velero:
         config:
           region: minio
           s3ForcePathStyle: "true"
-          s3Url: http://w7panel-backup-minio.velero.svc:9000
+          # The release may be installed into a namespace other than "velero".
+          # A same-namespace Service name works in either case.
+          s3Url: http://w7panel-backup-minio:9000
   initContainers:
     - name: velero-plugin-for-aws
       image: velero/velero-plugin-for-aws:v1.12.2

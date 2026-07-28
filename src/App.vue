@@ -58,7 +58,7 @@ import { computed, defineComponent, h, onMounted, onUnmounted, ref, resolveCompo
 import { backupResource, create, createSecret, credentialsSecret, discoverResources, list, locationResource, namespaces, patchSecret, remove, restoreResource, scheduleResource, update } from './velero'
 
 const ScopePicker = defineComponent({ props: { modelValue: Array, items: Array }, emits: ['update:modelValue'], setup(props, { emit }) { const FormItem = resolveComponent('a-form-item'), Select = resolveComponent('a-select'); return () => h(FormItem, { label: '备份范围' }, { default: () => h(Select, { modelValue: props.modelValue, 'onUpdate:modelValue': value => emit('update:modelValue', value), options: (props.items || []).map(value => ({ label: value, value })), multiple: true, allowClear: true, placeholder: '留空表示全部命名空间' }) }) } })
-const veleroNamespace = ref('velero'), tab = ref('backups'), loading = ref(false), saving = ref(false), ready = ref(false), error = ref(''), backupSearch = ref('')
+const veleroNamespace = ref('default'), tab = ref('backups'), loading = ref(false), saving = ref(false), ready = ref(false), error = ref(''), backupSearch = ref('')
 const backups = ref([]), restores = ref([]), schedules = ref([]), locations = ref([]), namespaceNames = ref([]), resourceOptions = ref([]), resourceLoading = ref(false)
 const dialogs = ref({ backup: false, restore: false, schedule: false, location: false })
 const backupForm = ref({}), restoreForm = ref({}), scheduleForm = ref({}), locationForm = ref({})
