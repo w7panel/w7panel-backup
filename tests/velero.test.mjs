@@ -1,12 +1,28 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
+import { backupResource, credentialsSecret, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
+
+test('localhost uses the Vite Kubernetes proxy path', () => {
+  assert.equal(isMicroappRuntime(), false)
+  assert.equal(localProxyPath('/api/v1/namespaces'), '/k8s-proxy/api/v1/namespaces')
+  assert.throws(() => localProxyPath('//example.com'), /路径无效/)
+})
 
 test('backup is manifest-only with a 30-day default', () => {
   const value = backupResource({ name: 'nightly-default', namespaces: ['default'], storageLocation: 'cos' })
-  assert.equal(value.spec.ttl, 'PT720H')
+  assert.equal(value.spec.ttl, '720h0m0s')
   assert.equal(value.spec.snapshotVolumes, false)
   assert.equal(value.spec.defaultVolumesToFsBackup, false)
+})
+
+test('backup supports include and exclude namespace and resource scopes', () => {
+  const selected = backupResource({ name: 'apps-only', namespaces: ['default'], resources: ['deployments.apps', 'services'], storageLocation: 'default' })
+  assert.deepEqual(selected.spec.includedNamespaces, ['default'])
+  assert.deepEqual(selected.spec.includedResources, ['deployments.apps', 'services'])
+  const ignored = backupResource({ name: 'except-system', namespaces: ['kube-system'], namespaceMode: 'exclude', resources: ['secrets'], resourceMode: 'exclude', storageLocation: 'default' })
+  assert.deepEqual(ignored.spec.excludedNamespaces, ['kube-system'])
+  assert.deepEqual(ignored.spec.excludedResources, ['secrets'])
+  assert.deepEqual(ignored.spec.includedNamespaces, ['*'])
 })
 
 test('restore uses safe collision and cluster-resource defaults', () => {
