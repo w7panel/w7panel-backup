@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
+import { backupResource, credentialsSecret, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -23,6 +23,12 @@ test('backup supports include and exclude namespace and resource scopes', () => 
   assert.deepEqual(ignored.spec.excludedNamespaces, ['kube-system'])
   assert.deepEqual(ignored.spec.excludedResources, ['secrets'])
   assert.deepEqual(ignored.spec.includedNamespaces, ['*'])
+})
+
+test('download request targets the complete backup archive', () => {
+  const request = downloadRequestResource({ name: 'download-123', backupName: 'nightly-default' })
+  assert.equal(request.spec.target.kind, 'BackupContents')
+  assert.equal(request.spec.target.name, 'nightly-default')
 })
 
 test('restore uses safe collision and cluster-resource defaults', () => {

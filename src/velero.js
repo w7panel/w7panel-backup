@@ -39,6 +39,7 @@ export async function request(path, options = {}) {
 }
 
 export const list = (namespace, resource) => request(veleroPath(namespace, resource))
+export const get = (namespace, resource, name) => request(veleroPath(namespace, resource, name))
 export const remove = (namespace, resource, name) => request(veleroPath(namespace, resource, name), { method: 'DELETE' })
 export const namespaces = () => request('/api/v1/namespaces')
 
@@ -82,6 +83,14 @@ export function backupResource({ name, namespaces: selected, namespaceMode = 'in
       ...namespaceScope, ...resourceScope, storageLocation,
       ttl: ttl(ttlHours), snapshotVolumes: false, defaultVolumesToFsBackup: false,
     },
+  }
+}
+
+export function downloadRequestResource({ name, backupName }) {
+  if (!validName(name) || !backupName) throw new Error('无法创建备份下载请求')
+  return {
+    apiVersion: 'velero.io/v1', kind: 'DownloadRequest', metadata: { name },
+    spec: { target: { kind: 'BackupContents', name: backupName } },
   }
 }
 
