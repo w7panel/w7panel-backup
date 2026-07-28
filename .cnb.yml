@@ -1,0 +1,54 @@
+# .cnb.yml
+
+# 使用 snapshot 测试镜像            
+v1.1.*:
+  tag_push:
+    - env:
+        - KO_DEFAULTBASEIMAGE=ccr.ccs.tencentyun.com/afan-public/ubuntu:24.04-offlineui
+        - KO_DOCKER_REPO=ccr.ccs.tencentyun.com/afan-public/w7panel-dev
+        # export KO_DEFAULTBASEIMAGE=ccr.ccs.tencentyun.com/afan-public/ubuntu:24.04-offlineui && export KO_DOCKER_REPO=ccr.ccs.tencentyun.com/afan-public/w7panel 
+      imports:
+        - https://cnb.cool/i0358/mykey/-/blob/main/218.yml
+      docker:
+        # 通过此参数控制使用的 Dockerfile 构建镜像必须公开
+        image: ccr.ccs.tencentyun.com/afan-public/ubuntu:go-build
+        volumes: 
+          - /home/workspace/.cache:read-write
+          - /root/.cache:read-write
+      stages:
+       
+        # - name: upzip
+        #   script: cd ./kodata/ && unzip -o ./kui.zip
+        - name: login
+          script: /root/go/bin/ko login docker.cnb.cool -u cnb -p ${CNB_TOKEN}
+
+        - name: build-ui 
+          image: node:20
+          script: npm install && npm run build 
+
+        - name: zip
+          script: cd ./dist && rm -rf ./dist.zip && zip -r dist.zip ./* 
+
+        - name: build-helm 
+          script: helm package ./charts/w7panel-backup --app-version ${CNB_BRANCH} --version ${CNB_BRANCH} 
+        
+        - name: push-zpk
+          script: |
+            curl -L --fail -o /usr/local/bin/zpk https://github.com/w7panel/w7panel-zpk/releases/download/latest/zpk_linux_amd64 && chmod +x /usr/local/bin/zpk
+            zpk login --username=w7admin --password=${ZPK_IDC_PASSWORD} --host=zpk.idc.w7.com
+            zpk use w7panel-backup
+            zpk attach add --path=./w7panel-backup-${CNB_BRANCH}.tgz --type=helm
+            zpk attach add --path=./dist/dist.zip --type=frontend
+            zpk push
+$:
+  vscode:
+    - runner:
+        cpus: 8
+      docker:
+        image: docker.cnb.cool/i0358/kbcli-helper:ide
+      services:
+        - vscode
+        - docker
+      stages:
+        - name: ls
+          script: ls -al
