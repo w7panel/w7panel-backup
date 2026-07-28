@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource } from '../src/velero.js'
+import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreResource, scheduleResource, veleroPath } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -51,4 +51,8 @@ test('location references a credential without exposing it', () => {
   assert.equal(location.spec.credential.key, 'cloud')
   assert.match(secret.stringData.cloud, /aws_secret_access_key=secret/)
   assert.equal(scheduleResource({ name: 'daily', cron: '0 2 * * *', storageLocation: 'cos' }).spec.template.snapshotVolumes, false)
+})
+
+test('storage-location patches target the namespaced Velero resource', () => {
+  assert.equal(veleroPath('default', 'backupstoragelocations', 'cos'), '/apis/velero.io/v1/namespaces/default/backupstoragelocations/cos')
 })

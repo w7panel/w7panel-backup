@@ -154,6 +154,10 @@ export async function update(namespace, resource, name, body) {
   return request(veleroPath(namespace, resource, name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
+export async function patch(namespace, resource, name, body) {
+  return request(veleroPath(namespace, resource, name), { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify(body) })
+}
+
 export async function patchSecret(namespace, name, body) {
   return request(`/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify(body) })
 }
