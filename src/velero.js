@@ -133,12 +133,19 @@ export function scheduleResource({ name, cron, namespaces: selected, namespaceMo
   }
 }
 
-export function locationResource({ name, bucket, region, endpoint, forcePathStyle, credentialName, makeDefault }) {
+export function locationResource({ name, bucket, region, endpoint, forcePathStyle, credentialName, makeDefault, accessMode = 'ReadWrite' }) {
   if (!validName(name) || !bucket || !region || !endpoint || !credentialName) throw new Error('请完整填写存储位置必填项')
+  if (!['ReadWrite', 'ReadOnly'].includes(accessMode)) throw new Error('存储位置访问模式无效')
   return {
     apiVersion: 'velero.io/v1', kind: 'BackupStorageLocation', metadata: { name },
-    spec: { provider: 'aws', objectStorage: { bucket }, credential: { name: credentialName, key: 'cloud' }, default: Boolean(makeDefault), config: { region, s3Url: endpoint, s3ForcePathStyle: String(Boolean(forcePathStyle)) } },
+    spec: { provider: 'aws', objectStorage: { bucket }, credential: { name: credentialName, key: 'cloud' }, accessMode, default: Boolean(makeDefault), config: { region, s3Url: endpoint, s3ForcePathStyle: String(Boolean(forcePathStyle)) } },
   }
+}
+
+export function restoreLocationIssue(location) {
+  if (!location) return '未找到来源备份使用的存储位置'
+  if (location.status?.phase !== 'Available') return `存储位置 ${location.metadata?.name || ''} 当前不可用，无法在此集群恢复`
+  return ''
 }
 
 export function credentialsSecret(name, accessKey, secretKey) {

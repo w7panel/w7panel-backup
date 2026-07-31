@@ -19,11 +19,14 @@ velero:
   configuration:
     defaultBackupStorageLocation: default
     defaultVolumesToFsBackup: false
+    # Target clusters use this sync to discover backups stored by another cluster.
+    backupSyncPeriod: 1m
     backupStorageLocation:
       - name: default
         provider: aws
         bucket: velero
         default: true
+        accessMode: ReadWrite
         credential:
           name: cloud-credentials
           key: cloud
