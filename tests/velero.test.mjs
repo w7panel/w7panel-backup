@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreLocationIssue, restoreResource, scheduleResource, veleroPath } from '../src/velero.js'
+import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -61,4 +61,5 @@ test('restore requires an available target storage location', () => {
 
 test('storage-location patches target the namespaced Velero resource', () => {
   assert.equal(veleroPath('default', 'backupstoragelocations', 'cos'), '/apis/velero.io/v1/namespaces/default/backupstoragelocations/cos')
+  assert.equal(veleroDeploymentPath('velero'), '/apis/apps/v1/namespaces/velero/deployments/velero')
 })

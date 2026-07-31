@@ -18,6 +18,10 @@ export function veleroPath(namespace, resource, name = '') {
   return `${API}/namespaces/${encodeURIComponent(namespace)}/${resource}${name ? `/${encodeURIComponent(name)}` : ''}`
 }
 
+export function veleroDeploymentPath(namespace) {
+  return `/apis/apps/v1/namespaces/${encodeURIComponent(namespace)}/deployments/velero`
+}
+
 async function failure(response) {
   const text = await response.text()
   let message = text
@@ -40,6 +44,7 @@ export async function request(path, options = {}) {
 
 export const list = (namespace, resource) => request(veleroPath(namespace, resource))
 export const get = (namespace, resource, name) => request(veleroPath(namespace, resource, name))
+export const veleroDeployment = (namespace) => request(veleroDeploymentPath(namespace))
 export const remove = (namespace, resource, name) => request(veleroPath(namespace, resource, name), { method: 'DELETE' })
 export const namespaces = () => request('/api/v1/namespaces')
 

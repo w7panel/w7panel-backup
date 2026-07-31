@@ -15,7 +15,7 @@
     <a-alert v-if="error" type="error" closable class="notice" @close="error = ''">{{ error }}</a-alert>
     <section v-if="!ready && !loading" class="prerequisite">
       <icon-cloud-download class="prerequisite-icon" />
-      <div><h2>尚未发现 Velero</h2><p>请先在集群中安装 Velero、S3 插件，并为当前 k8s-proxy 身份授予读取 Namespace、管理 Velero CRD 与 {{ veleroNamespace }} Secret 的权限。</p></div>
+      <div><h2>尚未发现 Velero</h2><p>默认检测 velero 命名空间；请先安装 Velero、S3 插件，并为当前 k8s-proxy 身份授予读取 Deployment、Namespace、管理 Velero CRD 与 {{ veleroNamespace }} Secret 的权限。</p></div>
       <a-button type="primary" @click="load">重新检测</a-button>
     </section>
 
@@ -56,10 +56,10 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, resolveComponent } from 'vue'
-import { backupResource, create, createSecret, credentialsSecret, discoverResources, downloadEndpointIssue, downloadRequestResource, get, list, locationResource, namespaces, patch, patchSecret, remove, restoreLocationIssue, restoreResource, scheduleResource, update } from './velero'
+import { backupResource, create, createSecret, credentialsSecret, discoverResources, downloadEndpointIssue, downloadRequestResource, get, list, locationResource, namespaces, patch, patchSecret, remove, restoreLocationIssue, restoreResource, scheduleResource, update, veleroDeployment } from './velero'
 
 const ScopePicker = defineComponent({ props: { modelValue: Array, items: Array }, emits: ['update:modelValue'], setup(props, { emit }) { const FormItem = resolveComponent('a-form-item'), Select = resolveComponent('a-select'); return () => h(FormItem, { label: '备份范围' }, { default: () => h(Select, { modelValue: props.modelValue, 'onUpdate:modelValue': value => emit('update:modelValue', value), options: (props.items || []).map(value => ({ label: value, value })), multiple: true, allowClear: true, placeholder: '留空表示全部命名空间' }) }) } })
-const veleroNamespace = ref('default'), tab = ref('backups'), loading = ref(false), saving = ref(false), downloading = ref(''), ready = ref(false), error = ref(''), backupSearch = ref('')
+const veleroNamespace = ref('velero'), tab = ref('backups'), loading = ref(false), saving = ref(false), downloading = ref(''), ready = ref(false), error = ref(''), backupSearch = ref('')
 const backups = ref([]), restores = ref([]), schedules = ref([]), locations = ref([]), namespaceNames = ref([]), resourceOptions = ref([]), resourceLoading = ref(false)
 const dialogs = ref({ detail: false, backup: false, restore: false, schedule: false, location: false })
 const backupForm = ref({}), backupDetail = ref(null), restoreForm = ref({}), scheduleForm = ref({}), locationForm = ref({})
@@ -77,7 +77,8 @@ function resetDialogs() { dialogs.value = { detail: false, backup: false, restor
 let refreshTimer
 const isRunning = item => !['Completed', 'PartiallyFailed', 'Failed', 'FailedValidation'].includes(item.status?.phase)
 function queueRefresh() { clearTimeout(refreshTimer); if ([...backups.value, ...restores.value].some(isRunning)) refreshTimer = window.setTimeout(load, 3000) }
-async function load() { if (loading.value) return; loading.value = true; error.value = ''; try { const [b, r, s, l, n] = await Promise.all([list(veleroNamespace.value, 'backups'), list(veleroNamespace.value, 'restores'), list(veleroNamespace.value, 'schedules'), list(veleroNamespace.value, 'backupstoragelocations'), namespaces()]); backups.value = b.items || []; restores.value = r.items || []; schedules.value = s.items || []; locations.value = l.items || []; namespaceNames.value = (n.items || []).map(item => item.metadata.name).sort(); ready.value = true; queueRefresh() } catch (cause) { ready.value = false; error.value = cause.message || '无法读取 Velero 资源' } finally { loading.value = false } }
+async function detectVeleroNamespace() { const candidates = [...new Set(['velero', 'default', veleroNamespace.value])]; for (const namespace of candidates) { try { await veleroDeployment(namespace); veleroNamespace.value = namespace; return } catch (cause) { if (cause.status !== 404) throw cause } } throw new Error('未在 velero 或 default 命名空间发现 Velero Deployment') }
+async function load({ detect = false } = {}) { if (loading.value) return; loading.value = true; error.value = ''; try { if (detect) await detectVeleroNamespace(); else await veleroDeployment(veleroNamespace.value); const [b, r, s, l, n] = await Promise.all([list(veleroNamespace.value, 'backups'), list(veleroNamespace.value, 'restores'), list(veleroNamespace.value, 'schedules'), list(veleroNamespace.value, 'backupstoragelocations'), namespaces()]); backups.value = b.items || []; restores.value = r.items || []; schedules.value = s.items || []; locations.value = l.items || []; namespaceNames.value = (n.items || []).map(item => item.metadata.name).sort(); ready.value = true; queueRefresh() } catch (cause) { ready.value = false; error.value = cause.message || '无法读取 Velero 资源' } finally { loading.value = false } }
 async function loadResourceOptions() { if (resourceOptions.value.length || resourceLoading.value) return; resourceLoading.value = true; try { resourceOptions.value = await discoverResources() } catch (cause) { error.value = `无法发现 Kubernetes 资源：${cause.message}` } finally { resourceLoading.value = false } }
 function openBackup() { backupForm.value = { name: formName('backup'), namespaceMode: 'include', namespaces: [], resourceMode: 'include', resources: [], storageLocation: defaultLocation.value, days: 30 }; dialogs.value.backup = true; loadResourceOptions() }
 function detailScope(included, excluded, allLabel) { if (excluded?.length) return `全部${allLabel}（忽略：${excluded.join('、')}）`; return !included?.length || included.includes('*') ? `全部${allLabel}` : included.join('、') }
@@ -99,6 +100,6 @@ async function toggleSchedule(record) { await savingAction(async () => { const b
 async function saveLocation() { await savingAction(async () => { const current = locationForm.value.original; const credentialName = current?.spec?.credential?.name || `${locationForm.value.name}-credentials`; const hasCredentials = locationForm.value.accessKey || locationForm.value.secretKey; if (hasCredentials && (!locationForm.value.accessKey || !locationForm.value.secretKey)) throw new Error('更新凭据时必须同时填写 Access Key 与 Secret Key'); if (!current && !hasCredentials) throw new Error('新建存储位置必须填写 Access Key 与 Secret Key'); if (hasCredentials) { const secret = credentialsSecret(credentialName, locationForm.value.accessKey, locationForm.value.secretKey); if (current) await patchSecret(veleroNamespace.value, credentialName, { stringData: secret.stringData }); else await createSecret(veleroNamespace.value, { ...secret, metadata: { ...secret.metadata, namespace: veleroNamespace.value } }) } const resource = locationResource({ ...locationForm.value, credentialName }); if (current) { const saved = await patch(veleroNamespace.value, 'backupstoragelocations', locationForm.value.name, { spec: resource.spec }); if (saved.spec?.config?.s3Url !== resource.spec.config.s3Url) throw new Error('S3 Endpoint 未保存，请检查当前身份是否具有更新存储位置的权限') } else await create(veleroNamespace.value, 'backupstoragelocations', resourceVersion(null, resource)); resetDialogs(); await load() }) }
 async function destroy(resource, name) { await savingAction(async () => { await remove(veleroNamespace.value, resource, name); await load() }) }
 async function savingAction(action) { saving.value = true; error.value = ''; try { await action() } catch (cause) { error.value = cause.message || '操作失败' } finally { saving.value = false } }
-onMounted(load)
+onMounted(() => load({ detect: true }))
 onUnmounted(() => clearTimeout(refreshTimer))
 </script>
