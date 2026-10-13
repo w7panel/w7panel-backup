@@ -7,3 +7,4 @@
 - **COS 返回 `PathStyleDomainForbidden`**：COS 存储位置关闭 `s3ForcePathStyle`。Bucket 单独填写完整名称，上海地域的 S3 Endpoint 填 `https://cos.ap-shanghai.myqcloud.com`；不要把 Bucket 名写进 Endpoint，否则 SDK 再加一次 Bucket，会产生重复域名和 TLS 证书错误。
 - **COS 提示 invalid top-level directories**：目标 Bucket 顶层有非 Velero 目录。使用专用空 Bucket，或在 `spec.objectStorage.prefix` 设置独立目录；当前页面没有 Prefix 字段，后续通过页面编辑该位置可能清除手工设置的 Prefix。
 - **COS `ListObjectsV2` 返回 `403 AccessDenied`**：请求已到达 COS，应核对密钥所属账号、Bucket 名以及该 Bucket 的列表权限（`cos:GetBucket`）；备份还需要对象读写权限。不要通过输出 Secret 的 `.data` 字段排障，即使内容是 base64 编码也属于敏感凭据。
+- **下载归档出现重复目录**：Velero 会为同一个 Kubernetes 对象同时保存普通资源路径和 `v1-preferredversion` 路径；这属于备份归档格式，不表示集群里有两份对象。218 集群的 `full-20261013-18-06` 归档中有 7,994 对这类文件，逐对校验内容完全一致。不要手工删除归档内的任一路径，以免影响恢复。
