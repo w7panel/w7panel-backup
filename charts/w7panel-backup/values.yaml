@@ -1,7 +1,15 @@
-# The default is self-contained for testing. For production, set minio.enabled=false,
-# create the cloud credential Secret yourself, and override velero.configuration.
-minio:
+localS3:
   enabled: true
+  image: versity/versitygw:v1.10.0
+  storageClass: local-path
+  size: 10Gi
+  bucket: velero
+  accessKey: w7panel-velero
+  secretKey: ""
+
+# Enable this on upgrades from installations using the bundled MinIO.
+legacyMinio:
+  enabled: false
   image: minio/minio:RELEASE.2024-10-29T16-01-48Z
   storageClass: local-path
   size: 10Gi
@@ -10,32 +18,15 @@ minio:
   bucket: velero
 
 velero:
-  # CRDs are supplied by the dependency's crds/ directory. Avoid the redundant
-  # upgrade Job so a first install is not blocked on a second Velero image pull.
   upgradeCRDs: false
   credentials:
     useSecret: true
-    existingSecret: cloud-credentials
+    existingSecret: local-s3-credentials
   configuration:
-    defaultBackupStorageLocation: default
+    defaultBackupStorageLocation: local
     defaultVolumesToFsBackup: false
-    # Target clusters use this sync to discover backups stored by another cluster.
     backupSyncPeriod: 1m
-    backupStorageLocation:
-      - name: default
-        provider: aws
-        bucket: velero
-        default: true
-        accessMode: ReadWrite
-        credential:
-          name: cloud-credentials
-          key: cloud
-        config:
-          region: minio
-          s3ForcePathStyle: "true"
-          # The release may be installed into a namespace other than "velero".
-          # A same-namespace Service name works in either case.
-          s3Url: http://w7panel-backup-minio:9000
+    backupStorageLocation: []
   initContainers:
     - name: velero-plugin-for-aws
       image: velero/velero-plugin-for-aws:v1.12.2

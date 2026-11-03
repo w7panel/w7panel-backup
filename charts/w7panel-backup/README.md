@@ -1,28 +1,59 @@
 # W7Panel Cluster Backup Chart
 
-Installs Velero plus a MinIO S3-compatible store for a self-contained test setup.
+Installs Velero, a local PVC-backed S3 gateway, and the backup object index service.
+The default storage location is `local` and can only be changed through Helm values.
+The UI displays locations as read-only. Backups contain Kubernetes resource manifests,
+not volume data or snapshots.
 
 ```sh
 helm dependency build charts/w7panel-backup
 helm upgrade --install w7panel-backup charts/w7panel-backup -n velero --create-namespace
 ```
 
-For production, disable `minio.enabled`, create `cloud-credentials` in the Velero namespace, and override the Velero BackupStorageLocation values with the external S3/COS endpoint and bucket. Do not commit production keys in values files.
+The chart generates and retains local S3 credentials in `local-s3-auth` and
+`local-s3-credentials`. Set `localS3.secretKey` before a first install if your
+secret management process requires a supplied value. The gateway stores buckets
+on the PVC selected by `localS3.storageClass` and `localS3.size`.
 
-## Cross-cluster restore
+For external S3, set `localS3.enabled=false`, provide
+`velero.configuration.backupStorageLocation` and
+`velero.configuration.defaultBackupStorageLocation`, and set
+`velero.credentials.existingSecret` to a separately managed Secret. The page
+continues to show that location as read-only.
 
-Cross-cluster restore is performed by the Velero instance in the **target** cluster. Install this chart and the W7Panel Backup microapp in every participating cluster, then configure each cluster to use the same external S3/COS bucket, prefix, and endpoint.
+## Upgrade from bundled MinIO
 
-1. In the source cluster, configure the BackupStorageLocation as `ReadWrite` and create the backup.
-2. In the target cluster, configure the same BackupStorageLocation as `ReadOnly`. The chart's default `backupSyncPeriod: 1m` makes Velero discover backups in the shared storage.
-3. Wait for the target cluster to show the synced backup in the W7Panel Backup page, then create a restore there. Resources are restored into the cluster currently connected to W7Panel.
+The chart refuses an upgrade if it detects the old MinIO PVC but
+`legacyMinio.enabled` is false. Keep the old MinIO service, PVC, credentials,
+and `default` BackupStorageLocation to read historical backups:
 
-Do not reuse backup names across source clusters that share a storage prefix. `ReadOnly` locations cannot create backups, but can synchronize and restore them. This chart currently backs up Kubernetes resource manifests only; PVC and volume data are not restored across clusters.
+```sh
+helm upgrade w7panel-backup charts/w7panel-backup -n velero --reuse-values \
+  --set legacyMinio.enabled=true
+```
 
-## Browser downloads
+Copy the previous MinIO access key, secret key, bucket, storage class, and PVC
+size into `legacyMinio` values before upgrading if they differ from the old
+defaults. Do not delete the old PVC until historical backups are no longer needed.
+If an upgrade fails, roll back the Helm release; no object data is migrated.
 
-Velero signs backup downloads using the configured `velero.configuration.backupStorageLocation[].config.s3Url`. To download from the W7Panel UI, configure this as a browser-accessible public HTTPS S3/COS endpoint (and ensure the Velero Pod can reach the same address). The bundled MinIO Service is cluster-internal and therefore suitable for backup testing only; its backup archives cannot be downloaded directly in a browser.
+## Application selection
 
-## Local UI development
+The UI reads W7Panel AppGroups and their `status.deployInfo.resourcesList`.
+It needs permission to list AppGroups in the visible namespaces, discover and
+patch selected Kubernetes resources, and access
+`services/w7panel-backup-index/proxy` in the Velero namespace. The index
+service account has cluster-wide `get` and `patch` permissions to tag
+AppGroup resources, and read permission for Velero backup downloads. Limit
+access to the microapp and index Service Proxy through your existing W7Panel
+RBAC. Application schedules reconcile new resource labels every 30 seconds;
+failed sync pauses the schedule until it succeeds.
 
-`npm run dev` starts Vite and a loopback-only `kubectl proxy`. Open `http://127.0.0.1:8022`; the UI sends its Kubernetes calls to Vite's `/k8s-proxy` route, which uses the current `KUBECONFIG` (default: `~/.kube/config`). You can override `PORT`, `KUBE_PROXY_PORT`, or `KUBECONFIG` when starting the command.
+## Downloads and cross-cluster restore
+
+The local S3 Service is only reachable inside the cluster, so direct browser
+downloads remain unavailable. To enable downloads or share backups between
+clusters, configure an HTTPS S3 endpoint reachable by browsers and all Velero
+Pods in Helm. Target clusters should use a ReadOnly location for shared storage.
+The chart's `backupSyncPeriod: 1m` discovers remote backups. Existing
+same-name resources are retained during restore.

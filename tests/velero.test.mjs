@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, credentialsSecret, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationResource, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
+import { backupResource, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -43,15 +43,6 @@ test('restore uses safe collision and cluster-resource defaults', () => {
   assert.equal(value.spec.existingResourcePolicy, 'none')
   assert.equal(value.spec.includeClusterResources, false)
   assert.deepEqual(value.spec.namespaceMapping, { default: 'restored' })
-})
-
-test('location references a credential without exposing it', () => {
-  const location = locationResource({ name: 'cos', bucket: 'archives', region: 'ap-guangzhou', endpoint: 'https://cos.example.com', forcePathStyle: true, credentialName: 'cos-credentials', accessMode: 'ReadOnly' })
-  const secret = credentialsSecret('cos-credentials', 'key', 'secret')
-  assert.equal(location.spec.credential.key, 'cloud')
-  assert.equal(location.spec.accessMode, 'ReadOnly')
-  assert.match(secret.stringData.cloud, /aws_secret_access_key=secret/)
-  assert.equal(scheduleResource({ name: 'daily', cron: '0 2 * * *', storageLocation: 'cos' }).spec.template.snapshotVolumes, false)
 })
 
 test('restore requires an available target storage location', () => {

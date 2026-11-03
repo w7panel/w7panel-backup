@@ -74,8 +74,9 @@ export function validName(value) { return /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test
 // server but causes Velero's Backup watch to fail decoding every Backup.
 export function ttl(value) { return `${Math.max(1, Math.min(8760, Number(value) || DEFAULT_TTL_HOURS))}h0m0s` }
 
-export function backupResource({ name, namespaces: selected, namespaceMode = 'include', resources: selectedResources, resourceMode = 'include', storageLocation, ttlHours }) {
+export function backupResource({ name, namespaces: selected, namespaceMode = 'include', resources: selectedResources, resourceMode = 'include', storageLocation, ttlHours, objectIds, appId, excludedObjectIds = [] }) {
   if (!validName(name)) throw new Error('备份名称必须为 63 字符以内的小写 DNS 名称')
+  if (objectIds && !objectIds.length) throw new Error('至少选择一个备份资源')
   const namespaceScope = namespaceMode === 'exclude'
     ? { includedNamespaces: ['*'], ...(selected?.length ? { excludedNamespaces: selected } : {}) }
     : { includedNamespaces: selected?.length ? selected : ['*'] }
@@ -86,6 +87,8 @@ export function backupResource({ name, namespaces: selected, namespaceMode = 'in
     apiVersion: 'velero.io/v1', kind: 'Backup', metadata: { name },
     spec: {
       ...namespaceScope, ...resourceScope, storageLocation,
+      ...(objectIds ? { orLabelSelectors: objectIds.map(id => ({ matchLabels: { 'backup.w7panel.io/object-id': id } })), includeClusterResources: true } : {}),
+      ...(appId ? { labelSelector: { matchLabels: { [`backup.w7panel.io/app-${appId}`]: 'true' }, ...(excludedObjectIds.length ? { matchExpressions: [{ key: 'backup.w7panel.io/object-id', operator: 'NotIn', values: excludedObjectIds }] } : {}) }, includeClusterResources: true } : {}),
       ttl: ttl(ttlHours), snapshotVolumes: false, defaultVolumesToFsBackup: false,
     },
   }
@@ -115,35 +118,28 @@ export function downloadEndpointIssue(endpoint) {
   } catch { return '请为存储位置配置有效的公网 HTTPS S3/COS Endpoint' }
 }
 
-export function restoreResource({ name, backupName, namespaces: selected, mapping = {} }) {
+export function restoreResource({ name, backupName, namespaces: selected, mapping = {}, objectIds }) {
   if (!validName(name)) throw new Error('恢复名称必须为 63 字符以内的小写 DNS 名称')
   if (!backupName) throw new Error('请选择一个备份')
+  if (objectIds && !objectIds.length) throw new Error('至少选择一个恢复资源')
   const namespaceMapping = Object.fromEntries(Object.entries(mapping).filter(([from, to]) => from && to && from !== to))
   return {
     apiVersion: 'velero.io/v1', kind: 'Restore', metadata: { name },
     spec: {
       backupName, includedNamespaces: selected?.length ? selected : ['*'],
       includeClusterResources: false, existingResourcePolicy: 'none',
+      ...(objectIds ? { orLabelSelectors: objectIds.map(id => ({ matchLabels: { 'backup.w7panel.io/object-id': id } })), includeClusterResources: true } : {}),
       ...(Object.keys(namespaceMapping).length ? { namespaceMapping } : {}),
     },
   }
 }
 
-export function scheduleResource({ name, cron, namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, paused }) {
+export function scheduleResource({ name, cron, namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, paused, appId, excludedObjectIds }) {
   if (!validName(name)) throw new Error('计划名称必须为 63 字符以内的小写 DNS 名称')
   if (!String(cron || '').trim()) throw new Error('请输入 Cron 表达式')
   return {
     apiVersion: 'velero.io/v1', kind: 'Schedule', metadata: { name },
-    spec: { schedule: cron.trim(), paused: Boolean(paused), template: backupResource({ name: 'template', namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours }).spec },
-  }
-}
-
-export function locationResource({ name, bucket, region, endpoint, forcePathStyle, credentialName, makeDefault, accessMode = 'ReadWrite' }) {
-  if (!validName(name) || !bucket || !region || !endpoint || !credentialName) throw new Error('请完整填写存储位置必填项')
-  if (!['ReadWrite', 'ReadOnly'].includes(accessMode)) throw new Error('存储位置访问模式无效')
-  return {
-    apiVersion: 'velero.io/v1', kind: 'BackupStorageLocation', metadata: { name },
-    spec: { provider: 'aws', objectStorage: { bucket }, credential: { name: credentialName, key: 'cloud' }, accessMode, default: Boolean(makeDefault), config: { region, s3Url: endpoint, s3ForcePathStyle: String(Boolean(forcePathStyle)) } },
+    spec: { schedule: cron.trim(), paused: Boolean(paused), template: backupResource({ name: 'template', namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, appId, excludedObjectIds }).spec },
   }
 }
 
@@ -153,27 +149,10 @@ export function restoreLocationIssue(location) {
   return ''
 }
 
-export function credentialsSecret(name, accessKey, secretKey) {
-  if (!accessKey || !secretKey) throw new Error('请输入 Access Key 与 Secret Key')
-  return { apiVersion: 'v1', kind: 'Secret', metadata: { name, labels: { 'app.kubernetes.io/managed-by': 'w7panel-cluster-backup' } }, type: 'Opaque', stringData: { cloud: `[default]\naws_access_key_id=${accessKey}\naws_secret_access_key=${secretKey}\n` } }
-}
-
 export async function create(namespace, resource, body) {
   return request(veleroPath(namespace, resource), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
 export async function update(namespace, resource, name, body) {
   return request(veleroPath(namespace, resource, name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-}
-
-export async function patch(namespace, resource, name, body) {
-  return request(veleroPath(namespace, resource, name), { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify(body) })
-}
-
-export async function patchSecret(namespace, name, body) {
-  return request(`/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify(body) })
-}
-
-export async function createSecret(namespace, body) {
-  return request(`/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }

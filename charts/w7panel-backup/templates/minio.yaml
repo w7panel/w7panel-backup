@@ -1,4 +1,4 @@
-{{- if .Values.minio.enabled }}
+{{- if .Values.legacyMinio.enabled }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -7,21 +7,23 @@ metadata:
     app.kubernetes.io/name: w7panel-backup-minio
 type: Opaque
 stringData:
-  MINIO_ROOT_USER: {{ .Values.minio.accessKey | quote }}
-  MINIO_ROOT_PASSWORD: {{ .Values.minio.secretKey | quote }}
+  MINIO_ROOT_USER: {{ .Values.legacyMinio.accessKey | quote }}
+  MINIO_ROOT_PASSWORD: {{ .Values.legacyMinio.secretKey | quote }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "w7panel-backup.minioName" . }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes: [ReadWriteOnce]
-  {{- with .Values.minio.storageClass }}
+  {{- with .Values.legacyMinio.storageClass }}
   storageClassName: {{ . | quote }}
   {{- end }}
   resources:
     requests:
-      storage: {{ .Values.minio.size }}
+      storage: {{ .Values.legacyMinio.size }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,12 +43,12 @@ spec:
     spec:
       containers:
         - name: minio
-          image: {{ .Values.minio.image | quote }}
+          image: {{ .Values.legacyMinio.image | quote }}
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-ec"]
           args:
             - |
-              mkdir -p /data/{{ .Values.minio.bucket | quote }}
+              mkdir -p /data/{{ .Values.legacyMinio.bucket | quote }}
               exec minio server /data --console-address :9001
           envFrom:
             - secretRef:

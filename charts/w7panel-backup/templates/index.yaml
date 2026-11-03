@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: w7panel-backup-index
+  annotations:
+    checksum/script: {{ printf "%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") | sha256sum }}
+data:
+  server.mjs: |-
+{{ .Files.Get "controller/server.mjs" | indent 4 }}
+  archive.mjs: |-
+{{ .Files.Get "controller/archive.mjs" | indent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: w7panel-backup-index
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-backup-index
+rules:
+  - apiGroups: ["w7panel.w7.com"]
+    resources: ["appgroups"]
+    verbs: ["get", "list"]
+  - apiGroups: ["velero.io"]
+    resources: ["schedules", "downloadrequests"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "patch"]
+  - nonResourceURLs: ["/api/*", "/apis/*"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-backup-index
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-backup-index
+subjects:
+  - kind: ServiceAccount
+    name: w7panel-backup-index
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: w7panel-backup-index
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: w7panel-backup-index }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: w7panel-backup-index }
+      annotations:
+        checksum/script: {{ printf "%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") | sha256sum }}
+    spec:
+      serviceAccountName: w7panel-backup-index
+      containers:
+        - name: index
+          image: node:22-alpine
+          command: [node, /app/server.mjs]
+          env:
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket: { port: http }
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: w7panel-backup-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: w7panel-backup-index
+spec:
+  selector: { app.kubernetes.io/name: w7panel-backup-index }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

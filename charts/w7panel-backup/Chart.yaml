@@ -1,8 +1,8 @@
 apiVersion: v2
 name: w7panel-backup
-description: W7Panel cluster backup service backed by Velero and an in-cluster MinIO test store
+description: W7Panel cluster backup service backed by Velero and a local S3 gateway
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "1.18.1"
 dependencies:
   - name: velero
