@@ -3,12 +3,14 @@ kind: ConfigMap
 metadata:
   name: w7panel-backup-index
   annotations:
-    checksum/script: {{ printf "%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") | sha256sum }}
+    checksum/script: {{ printf "%s%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") (.Files.Get "controller/references.mjs") | sha256sum }}
 data:
   server.mjs: |-
 {{ .Files.Get "controller/server.mjs" | indent 4 }}
   archive.mjs: |-
 {{ .Files.Get "controller/archive.mjs" | indent 4 }}
+  references.mjs: |-
+{{ .Files.Get "controller/references.mjs" | indent 4 }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -57,7 +59,7 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: w7panel-backup-index }
       annotations:
-        checksum/script: {{ printf "%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") | sha256sum }}
+        checksum/script: {{ printf "%s%s%s" (.Files.Get "controller/server.mjs") (.Files.Get "controller/archive.mjs") (.Files.Get "controller/references.mjs") | sha256sum }}
     spec:
       serviceAccountName: w7panel-backup-index
       containers:

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { annotatedApps, appKey, appObjects, labelId, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
+import { annotatedApps, appKey, appObjects, labelId, liveAppObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
 import { backupResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('AppGroup deployment manifest becomes a distinct selectable object list', async () => {
@@ -29,6 +29,27 @@ test('adding and removing apps keeps manual deselections and selects only new re
   const b = { apiVersion: 'v1', kind: 'Service', namespace: 'other', name: 'b' }
   assert.deepEqual(selectedUnion([a, shared], [objectKey(a)], [a, shared, shared, b]), [objectKey(a), objectKey(b)])
   assert.deepEqual(selectedUnion([a, shared, b], [objectKey(a), objectKey(b)], [shared, b]), [objectKey(b)])
+})
+
+test('live app resources add referenced objects and skip missing references', async () => {
+  const app = { apiVersion: 'w7panel.w7.com/v1alpha1', metadata: { namespace: 'default', name: 'shop' }, status: { deployInfo: [{ resourcesList: [{ apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web' }] }] } }
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async url => {
+    if (url === '/k8s-proxy/apis/w7panel.w7.com/v1alpha1') return Response.json({ resources: [{ kind: 'AppGroup', name: 'appgroups', namespaced: true, verbs: ['patch'] }] })
+    if (url === '/k8s-proxy/apis/apps/v1') return Response.json({ resources: [{ kind: 'Deployment', name: 'deployments', namespaced: true, verbs: ['patch'] }] })
+    if (url === '/k8s-proxy/api/v1') return Response.json({ resources: ['ConfigMap', 'Secret'].map(kind => ({ kind, name: `${kind.toLowerCase()}s`, namespaced: true, verbs: ['patch'] })) })
+    if (url.endsWith('/deployments/web')) return Response.json({ spec: { template: { spec: { volumes: [{ configMap: { name: 'settings' } }, { secret: { secretName: 'missing' } }] } } } })
+    if (url.endsWith('/secrets/missing')) return Response.json({ message: 'Not Found' }, { status: 404 })
+    return Response.json({ metadata: { namespace: 'default' } })
+  }
+  try {
+    assert.deepEqual((await liveAppObjects(app)).map(objectKey), [
+      'w7panel.w7.com/v1alpha1/AppGroup/default/shop', 'apps/v1/Deployment/default/web', 'v1/ConfigMap/default/settings',
+    ])
+    const available = globalThis.fetch
+    globalThis.fetch = url => url.endsWith('/configmaps/settings') ? Promise.resolve(Response.json({ message: 'Forbidden' }, { status: 403 })) : available(url)
+    await assert.rejects(() => liveAppObjects(app), /Forbidden/)
+  } finally { globalThis.fetch = originalFetch }
 })
 
 test('single-object backup and restore selectors exclude unselected objects', () => {
@@ -63,8 +84,9 @@ test('selected objects receive an app-specific label before backup', async () =>
   try {
     const result = await markObjects(app, [object])
     assert.equal(result.objects.length, 1)
-    assert.equal(calls[1].url, '/k8s-proxy/apis/apps/v1/namespaces/default/deployments/web')
-    const labels = JSON.parse(calls[1].options.body).metadata.labels
+    const patch = calls.find(call => call.options.method === 'PATCH')
+    assert.equal(patch.url, '/k8s-proxy/apis/apps/v1/namespaces/default/deployments/web')
+    const labels = JSON.parse(patch.options.body).metadata.labels
     assert.equal(labels[`backup.w7panel.io/app-${result.appId}`], 'true')
     assert.equal(labels['backup.w7panel.io/object-id'], result.objects[0].id)
   } finally { globalThis.fetch = originalFetch }

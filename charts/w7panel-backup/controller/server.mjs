@@ -2,6 +2,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { archiveObjects } from './archive.mjs'
+import { referencedObjects } from './references.mjs'
 
 const namespace = process.env.POD_NAMESPACE || 'velero'
 const api = `https://${process.env.KUBERNETES_SERVICE_HOST}:${process.env.KUBERNETES_SERVICE_PORT_HTTPS || 443}`
@@ -50,10 +51,16 @@ async function syncSchedule(schedule) {
     const [appNamespace, appName] = key.split('/')
     const app = await k8s(`/apis/w7panel.w7.com/v1alpha1/namespaces/${esc(appNamespace)}/appgroups/${esc(appName)}`)
     const appId = id(key)
-    for (const object of objects(app)) {
+    const pending = objects(app)
+    const seen = new Set()
+    for (const object of pending) {
+      const key = `${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`
+      if (seen.has(key)) continue
+      seen.add(key)
       const path = await resourcePath(object)
       let current
       try { current = await k8s(path) } catch (error) { if (error.message.includes(': 404 ')) continue; throw error }
+      pending.push(...referencedObjects({ ...current, kind: object.kind, metadata: { ...current.metadata, namespace: object.namespace } }))
       const objectId = id(`${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`)
       if (current.metadata?.labels?.[`${appLabel}${appId}`] === 'true' && current.metadata?.labels?.[objectLabel] === objectId) continue
       await k8s(path, 'PATCH', { metadata: { labels: { [`${appLabel}${appId}`]: 'true', [objectLabel]: objectId } } })

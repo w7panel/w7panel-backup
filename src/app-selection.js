@@ -1,4 +1,5 @@
 import { request } from './velero.js'
+import { referencedObjects } from '../charts/w7panel-backup/controller/references.mjs'
 
 export const APP_LABEL = 'backup.w7panel.io/app-'
 export const OBJECT_LABEL = 'backup.w7panel.io/object-id'
@@ -57,10 +58,16 @@ async function apiPath(object) {
 
 export async function liveAppObjects(app) {
   const values = []
-  for (const object of appObjects(app)) {
+  const pending = appObjects(app)
+  const seen = new Set()
+  for (const object of pending) {
+    const key = objectKey(object)
+    if (seen.has(key)) continue
+    seen.add(key)
     try {
-      await request(await apiPath(object))
+      const current = await request(await apiPath(object))
       values.push(object)
+      pending.push(...referencedObjects({ ...current, kind: object.kind, metadata: { ...current.metadata, namespace: object.namespace } }))
     } catch (cause) {
       if (cause.status !== 404) throw cause
     }
