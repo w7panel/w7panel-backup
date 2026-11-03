@@ -74,7 +74,11 @@ export function validName(value) { return /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test
 // server but causes Velero's Backup watch to fail decoding every Backup.
 export function ttl(value) { return `${Math.max(1, Math.min(8760, Number(value) || DEFAULT_TTL_HOURS))}h0m0s` }
 
-export function backupResource({ name, namespaces: selected, namespaceMode = 'include', resources: selectedResources, resourceMode = 'include', storageLocation, ttlHours, objectIds, appId, excludedObjectIds = [] }) {
+function appSelector(id, excludedObjectIds) {
+  return { matchLabels: { [`backup.w7panel.io/app-${id}`]: 'true' }, ...(excludedObjectIds.length ? { matchExpressions: [{ key: 'backup.w7panel.io/object-id', operator: 'NotIn', values: excludedObjectIds }] } : {}) }
+}
+
+export function backupResource({ name, namespaces: selected, namespaceMode = 'include', resources: selectedResources, resourceMode = 'include', storageLocation, ttlHours, objectIds, appId, appIds = [], excludedObjectIds = [] }) {
   if (!validName(name)) throw new Error('备份名称必须为 63 字符以内的小写 DNS 名称')
   if (objectIds && !objectIds.length) throw new Error('至少选择一个备份资源')
   const namespaceScope = namespaceMode === 'exclude'
@@ -88,7 +92,7 @@ export function backupResource({ name, namespaces: selected, namespaceMode = 'in
     spec: {
       ...namespaceScope, ...resourceScope, storageLocation,
       ...(objectIds ? { orLabelSelectors: objectIds.map(id => ({ matchLabels: { 'backup.w7panel.io/object-id': id } })), includeClusterResources: true } : {}),
-      ...(appId ? { labelSelector: { matchLabels: { [`backup.w7panel.io/app-${appId}`]: 'true' }, ...(excludedObjectIds.length ? { matchExpressions: [{ key: 'backup.w7panel.io/object-id', operator: 'NotIn', values: excludedObjectIds }] } : {}) }, includeClusterResources: true } : {}),
+      ...(appIds.length ? { orLabelSelectors: appIds.map(id => appSelector(id, excludedObjectIds)), includeClusterResources: true } : appId ? { labelSelector: appSelector(appId, excludedObjectIds), includeClusterResources: true } : {}),
       ttl: ttl(ttlHours), snapshotVolumes: false, defaultVolumesToFsBackup: false,
     },
   }
@@ -134,12 +138,12 @@ export function restoreResource({ name, backupName, namespaces: selected, mappin
   }
 }
 
-export function scheduleResource({ name, cron, namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, paused, appId, excludedObjectIds }) {
+export function scheduleResource({ name, cron, namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, paused, appId, appIds, excludedObjectIds }) {
   if (!validName(name)) throw new Error('计划名称必须为 63 字符以内的小写 DNS 名称')
   if (!String(cron || '').trim()) throw new Error('请输入 Cron 表达式')
   return {
     apiVersion: 'velero.io/v1', kind: 'Schedule', metadata: { name },
-    spec: { schedule: cron.trim(), paused: Boolean(paused), template: backupResource({ name: 'template', namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, appId, excludedObjectIds }).spec },
+    spec: { schedule: cron.trim(), paused: Boolean(paused), template: backupResource({ name: 'template', namespaces: selected, namespaceMode, resources, resourceMode, storageLocation, ttlHours, appId, appIds, excludedObjectIds }).spec },
   }
 }
 

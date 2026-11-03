@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { appKey, appObjects, labelId, markObjects, objectKey } from '../src/app-selection.js'
+import { annotatedApps, appKey, appObjects, labelId, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
 import { backupResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('AppGroup deployment manifest becomes a distinct selectable object list', async () => {
@@ -16,6 +16,21 @@ test('AppGroup deployment manifest becomes a distinct selectable object list', a
   assert.equal((await labelId(objectKey(objects[1]))).length, 32)
 })
 
+test('multiple AppGroups merge shared resources and old annotations remain readable', () => {
+  const shared = { apiVersion: 'v1', kind: 'Service', namespace: 'default', name: 'web' }
+  assert.deepEqual(uniqueObjects([shared, shared]).map(objectKey), ['v1/Service/default/web'])
+  assert.deepEqual(annotatedApps({ 'backup.w7panel.io/appgroups': '["default/shop","other/api"]' }), ['default/shop', 'other/api'])
+  assert.deepEqual(annotatedApps({ 'backup.w7panel.io/app-namespace': 'default', 'backup.w7panel.io/app-name': 'shop' }), ['default/shop'])
+})
+
+test('adding and removing apps keeps manual deselections and selects only new resources', () => {
+  const a = { apiVersion: 'v1', kind: 'Service', namespace: 'default', name: 'a' }
+  const shared = { apiVersion: 'v1', kind: 'Service', namespace: 'default', name: 'shared' }
+  const b = { apiVersion: 'v1', kind: 'Service', namespace: 'other', name: 'b' }
+  assert.deepEqual(selectedUnion([a, shared], [objectKey(a)], [a, shared, shared, b]), [objectKey(a), objectKey(b)])
+  assert.deepEqual(selectedUnion([a, shared, b], [objectKey(a), objectKey(b)], [shared, b]), [objectKey(b)])
+})
+
 test('single-object backup and restore selectors exclude unselected objects', () => {
   const backup = backupResource({ name: 'shop', namespaces: ['default'], storageLocation: 'local', objectIds: ['id-a'] })
   const restore = restoreResource({ name: 'shop-restore', backupName: 'shop', namespaces: ['default'], objectIds: ['id-a'] })
@@ -29,6 +44,11 @@ test('app schedule includes future app resources but excludes unchecked identiti
   const value = scheduleResource({ name: 'daily', cron: '0 2 * * *', namespaces: ['*'], storageLocation: 'local', appId: 'app-a', excludedObjectIds: ['obj-b'] })
   assert.deepEqual(value.spec.template.includedNamespaces, ['*'])
   assert.deepEqual(value.spec.template.labelSelector, { matchLabels: { 'backup.w7panel.io/app-app-a': 'true' }, matchExpressions: [{ key: 'backup.w7panel.io/object-id', operator: 'NotIn', values: ['obj-b'] }] })
+})
+
+test('multi-app schedule ORs app labels and excludes unchecked shared identities', () => {
+  const value = scheduleResource({ name: 'daily', cron: '0 2 * * *', namespaces: ['*'], storageLocation: 'local', appIds: ['a', 'b'], excludedObjectIds: ['shared'] })
+  assert.deepEqual(value.spec.template.orLabelSelectors, ['a', 'b'].map(id => ({ matchLabels: { [`backup.w7panel.io/app-${id}`]: 'true' }, matchExpressions: [{ key: 'backup.w7panel.io/object-id', operator: 'NotIn', values: ['shared'] }] })))
 })
 
 test('selected objects receive an app-specific label before backup', async () => {

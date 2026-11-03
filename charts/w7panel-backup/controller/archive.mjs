@@ -37,7 +37,7 @@ async function* tarEntries(stream) {
   }
 }
 
-export async function archiveObjects(url, appId) {
+export async function archiveObjects(url, appIds) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120000) })
   if (!response.ok) throw new Error(`Backup archive download failed: ${response.status}`)
   const found = new Map()
@@ -45,9 +45,12 @@ export async function archiveObjects(url, appId) {
     try {
       const object = JSON.parse(entry.data)
       const labels = object.metadata?.labels || {}
-      if (!object.apiVersion || !object.kind || !object.metadata?.name || !labels[objectLabel] || labels[`${appLabel}${appId}`] !== 'true') continue
-      const value = { apiVersion: object.apiVersion, kind: object.kind, namespace: object.metadata.namespace || '', name: object.metadata.name, id: labels[objectLabel], appId }
-      found.set(`${value.apiVersion}/${value.kind}/${value.namespace}/${value.name}`, value)
+      if (!object.apiVersion || !object.kind || !object.metadata?.name || !labels[objectLabel]) continue
+      for (const appId of appIds) {
+        if (labels[`${appLabel}${appId}`] !== 'true') continue
+        const value = { apiVersion: object.apiVersion, kind: object.kind, namespace: object.metadata.namespace || '', name: object.metadata.name, id: labels[objectLabel], appId }
+        found.set(`${value.apiVersion}/${value.kind}/${value.namespace}/${value.name}/${appId}`, value)
+      }
     } catch { /* unrelated archive JSON */ }
   }
   return [...found.values()]

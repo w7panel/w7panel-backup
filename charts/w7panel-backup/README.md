@@ -40,6 +40,8 @@ If an upgrade fails, roll back the Helm release; no object data is migrated.
 ## Application selection
 
 The UI reads W7Panel AppGroups and their `status.deployInfo.resourcesList`.
+Backup, restore, and schedules accept multiple AppGroups. Shared resources are
+shown once, and newly selected applications default their resources to selected.
 It needs permission to list AppGroups in the visible namespaces, discover and
 patch selected Kubernetes resources, and access
 `services/w7panel-backup-index/proxy` in the Velero namespace. The index

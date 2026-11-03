@@ -6,6 +6,24 @@ export const OBJECT_LABEL = 'backup.w7panel.io/object-id'
 export const appKey = app => `${app.metadata.namespace}/${app.metadata.name}`
 export const objectKey = object => `${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`
 
+export const uniqueObjects = objects => [...new Map(objects.map(object => [objectKey(object), object])).values()]
+
+export function selectedUnion(previous, selected, current) {
+  const existing = new Set(previous.map(objectKey))
+  return uniqueObjects(current).map(objectKey).filter(key => !existing.has(key) || selected.includes(key))
+}
+
+export function annotatedApps(annotations = {}) {
+  if (annotations['backup.w7panel.io/appgroups']) {
+    try {
+      const keys = JSON.parse(annotations['backup.w7panel.io/appgroups'])
+      if (Array.isArray(keys)) return keys.filter(key => typeof key === 'string' && key.includes('/'))
+    } catch { return [] }
+  }
+  const { 'backup.w7panel.io/app-namespace': namespace, 'backup.w7panel.io/app-name': name } = annotations
+  return namespace && name ? [`${namespace}/${name}`] : []
+}
+
 export async function labelId(value) {
   const bytes = new TextEncoder().encode(value)
   const digest = await crypto.subtle.digest('SHA-256', bytes)

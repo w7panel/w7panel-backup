@@ -11,6 +11,18 @@ const objectLabel = 'backup.w7panel.io/object-id'
 const id = value => createHash('sha256').update(value).digest('hex').slice(0, 32)
 const esc = encodeURIComponent
 
+function appKeys(annotations = {}) {
+  if (annotations['backup.w7panel.io/appgroups']) {
+    try {
+      const keys = JSON.parse(annotations['backup.w7panel.io/appgroups'])
+      if (Array.isArray(keys)) return keys.filter(key => typeof key === 'string' && key.includes('/'))
+    } catch { return [] }
+  }
+  const appNamespace = annotations['backup.w7panel.io/app-namespace']
+  const appName = annotations['backup.w7panel.io/app-name']
+  return appNamespace && appName ? [`${appNamespace}/${appName}`] : []
+}
+
 async function k8s(path, method = 'GET', body) {
   const response = await fetch(`${api}${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': method === 'PATCH' ? 'application/merge-patch+json' : 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
   if (!response.ok) throw new Error(`Kubernetes ${method} ${path}: ${response.status} ${await response.text()}`)
@@ -34,19 +46,18 @@ async function resourcePath(object) {
 }
 
 async function syncSchedule(schedule) {
-  const labels = schedule.metadata.annotations || {}
-  const appNamespace = labels['backup.w7panel.io/app-namespace']
-  const appName = labels['backup.w7panel.io/app-name']
-  if (!appNamespace || !appName) return
-  const app = await k8s(`/apis/w7panel.w7.com/v1alpha1/namespaces/${esc(appNamespace)}/appgroups/${esc(appName)}`)
-  const appId = id(`${appNamespace}/${appName}`)
-  for (const object of objects(app)) {
-    const path = await resourcePath(object)
-    let current
-    try { current = await k8s(path) } catch (error) { if (error.message.includes(': 404 ')) continue; throw error }
-    const objectId = id(`${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`)
-    if (current.metadata?.labels?.[`${appLabel}${appId}`] === 'true' && current.metadata?.labels?.[objectLabel] === objectId) continue
-    await k8s(path, 'PATCH', { metadata: { labels: { [`${appLabel}${appId}`]: 'true', [objectLabel]: objectId } } })
+  for (const key of appKeys(schedule.metadata.annotations)) {
+    const [appNamespace, appName] = key.split('/')
+    const app = await k8s(`/apis/w7panel.w7.com/v1alpha1/namespaces/${esc(appNamespace)}/appgroups/${esc(appName)}`)
+    const appId = id(key)
+    for (const object of objects(app)) {
+      const path = await resourcePath(object)
+      let current
+      try { current = await k8s(path) } catch (error) { if (error.message.includes(': 404 ')) continue; throw error }
+      const objectId = id(`${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`)
+      if (current.metadata?.labels?.[`${appLabel}${appId}`] === 'true' && current.metadata?.labels?.[objectLabel] === objectId) continue
+      await k8s(path, 'PATCH', { metadata: { labels: { [`${appLabel}${appId}`]: 'true', [objectLabel]: objectId } } })
+    }
   }
 }
 
@@ -54,7 +65,7 @@ async function reconcile() {
   try {
     const schedules = await k8s(`/apis/velero.io/v1/namespaces/${esc(namespace)}/schedules`)
     for (const schedule of schedules.items || []) {
-      if (!schedule.metadata.annotations?.['backup.w7panel.io/app-name']) continue
+      if (!appKeys(schedule.metadata.annotations).length) continue
       const path = `/apis/velero.io/v1/namespaces/${esc(namespace)}/schedules/${esc(schedule.metadata.name)}`
       const annotations = schedule.metadata.annotations || {}
       try {
@@ -73,10 +84,10 @@ async function reconcile() {
 async function backupIndex(name) {
   const backup = await k8s(`/apis/velero.io/v1/namespaces/${esc(namespace)}/backups/${esc(name)}`)
   const annotations = backup.metadata?.annotations || {}
-  const appId = annotations['backup.w7panel.io/app-name'] && annotations['backup.w7panel.io/app-namespace']
-    ? id(`${annotations['backup.w7panel.io/app-namespace']}/${annotations['backup.w7panel.io/app-name']}`)
-    : Object.keys(backup.spec?.labelSelector?.matchLabels || {}).find(key => key.startsWith(appLabel))?.slice(appLabel.length)
-  if (!appId) return []
+  const appIds = appKeys(annotations).map(id).concat(
+    [backup.spec?.labelSelector, ...(backup.spec?.orLabelSelectors || [])].flatMap(selector => Object.keys(selector?.matchLabels || {}).filter(key => key.startsWith(appLabel)).map(key => key.slice(appLabel.length)))
+  )
+  if (!appIds.length) return []
   const requestName = `index-${randomBytes(6).toString('hex')}`
   const base = `/apis/velero.io/v1/namespaces/${esc(namespace)}/downloadrequests`
   await k8s(base, 'POST', { apiVersion: 'velero.io/v1', kind: 'DownloadRequest', metadata: { name: requestName, namespace }, spec: { target: { kind: 'BackupContents', name } } })
@@ -84,7 +95,7 @@ async function backupIndex(name) {
     for (let attempt = 0; attempt < 30; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 500))
       const request = await k8s(`${base}/${requestName}`)
-      if (request.status?.downloadURL) return archiveObjects(request.status.downloadURL, appId)
+      if (request.status?.downloadURL) return archiveObjects(request.status.downloadURL, [...new Set(appIds)])
     }
     throw new Error('Backup archive request timed out')
   } finally {

@@ -16,5 +16,12 @@ test('archive index returns only tagged objects for the selected app and dedupli
   const other = { ...app, metadata: { ...app.metadata, name: 'other', labels: { 'backup.w7panel.io/app-other': 'true', 'backup.w7panel.io/object-id': 'otherid' } } }
   const tar = Buffer.concat([entry('resources/apps/deployments/default/web.json', app), entry('resources/apps/deployments/default/web-copy.json', app), entry('resources/apps/deployments/default/other.json', other), Buffer.alloc(1024)])
   const url = `data:application/gzip;base64,${gzipSync(tar).toString('base64')}`
-  assert.deepEqual(await archiveObjects(url, 'appid'), [{ apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web', id: 'objectid', appId: 'appid' }])
+  assert.deepEqual(await archiveObjects(url, ['appid']), [{ apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web', id: 'objectid', appId: 'appid' }])
+})
+
+test('archive index reports shared resources for each selected app without duplicate archive paths', async () => {
+  const shared = { apiVersion: 'v1', kind: 'Service', metadata: { namespace: 'default', name: 'web', labels: { 'backup.w7panel.io/app-a': 'true', 'backup.w7panel.io/app-b': 'true', 'backup.w7panel.io/object-id': 'shared' } } }
+  const tar = Buffer.concat([entry('resources/services/default/web.json', shared), entry('resources/services/default/web-copy.json', shared), Buffer.alloc(1024)])
+  const url = `data:application/gzip;base64,${gzipSync(tar).toString('base64')}`
+  assert.deepEqual((await archiveObjects(url, ['a', 'b'])).map(item => item.appId), ['a', 'b'])
 })
