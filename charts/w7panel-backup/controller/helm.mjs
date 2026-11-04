@@ -27,6 +27,6 @@ export function releaseObjects(release) {
     kind: object.kind,
     namespace: object.metadata.namespace || release.namespace,
     name: object.metadata.name,
-    optional: source.optional,
+    optional: source.optional || object.kind === 'Job',
   })))
 }

@@ -19,3 +19,9 @@ test('Helm Secret yields rendered, hook, and Chart CRD objects', () => {
   ])
   assert.throws(() => releaseFromSecret({ ...secret, metadata: { ...secret.metadata, labels: { name: 'other' } } }), /identity mismatch/)
 })
+
+test('rendered Helm Jobs may be absent after they finish', () => {
+  const objects = releaseObjects({ namespace: 'default', manifest: 'apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: upgrade\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n' })
+  assert.equal(objects.find(object => object.kind === 'Job').optional, true)
+  assert.equal(objects.find(object => object.kind === 'Deployment').optional, false)
+})
