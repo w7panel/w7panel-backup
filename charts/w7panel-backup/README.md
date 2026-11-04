@@ -2,7 +2,7 @@
 
 Installs Velero, a local PVC-backed S3 gateway, and the backup object index service.
 The default storage location is `local` and can only be changed through Helm values.
-The UI displays locations as read-only. Backups contain Kubernetes resource manifests,
+The UI can create, edit, and delete its own S3-compatible locations; Helm-managed locations remain read-only. Backups contain Kubernetes resource manifests,
 not volume data or snapshots.
 
 ```sh
@@ -21,7 +21,7 @@ For external S3, set `localS3.enabled=false`, provide
 `velero.configuration.backupStorageLocation` and
 `velero.configuration.defaultBackupStorageLocation`, and set
 `velero.credentials.existingSecret` to a separately managed Secret. The page
-continues to show that location as read-only.
+continues to show that Helm-managed location as read-only. UI-created locations keep credentials in dedicated Kubernetes Secrets and require the W7Panel k8s-proxy identity to create, patch, and delete Secrets in the Velero namespace. Referenced locations cannot be deleted through the UI.
 
 ## Upgrade from bundled MinIO
 

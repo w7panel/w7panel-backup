@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
+import { backupResource, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationCredential, locationReferences, locationResource, managedLocation, secretPath, writableLocation, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -53,4 +53,29 @@ test('restore requires an available target storage location', () => {
 test('storage-location patches target the namespaced Velero resource', () => {
   assert.equal(veleroPath('default', 'backupstoragelocations', 'cos'), '/apis/velero.io/v1/namespaces/default/backupstoragelocations/cos')
   assert.equal(veleroDeploymentPath('velero'), '/apis/apps/v1/namespaces/velero/deployments/velero')
+})
+
+
+test('page-created S3 location uses its own credential without exposing the key in the location', () => {
+  const form = { name: 'cos', bucket: 'backup-123', prefix: 'velero', endpoint: 'https://cos.ap-shanghai.myqcloud.com', region: 'ap-shanghai', forcePathStyle: false, accessMode: 'ReadWrite' }
+  const location = locationResource(form)
+  const credential = locationCredential(form.name, 'id', 'private-key')
+  assert.equal(location.spec.config.s3ForcePathStyle, 'false')
+  assert.equal(location.spec.objectStorage.prefix, 'velero')
+  assert.equal(location.spec.credential.name, 'bsl-cos')
+  assert.equal(JSON.stringify(location).includes('private-key'), false)
+  assert.equal(credential.stringData.cloud, '[default]\naws_access_key_id=id\naws_secret_access_key=private-key')
+  assert.equal(managedLocation(location), true)
+  assert.equal(writableLocation({ ...location, status: { phase: 'Available' } }), true)
+  assert.equal(writableLocation({ ...location, spec: { ...location.spec, accessMode: 'ReadOnly' }, status: { phase: 'Available' } }), false)
+  assert.equal(secretPath('velero', 'bsl-cos'), '/api/v1/namespaces/velero/secrets/bsl-cos')
+  assert.throws(() => locationResource({ ...form, endpoint: 'https://user:password@cos.example.com' }), /Endpoint/)
+  assert.throws(() => locationCredential('cos', 'id', 'with\nnewline'), /换行/)
+})
+
+test('storage location deletion finds backup and schedule references', () => {
+  const backups = [{ metadata: { name: 'one' }, spec: { storageLocation: 'cos' } }]
+  const schedules = [{ metadata: { name: 'daily' }, spec: { template: { storageLocation: 'cos' } } }]
+  assert.deepEqual(locationReferences('cos', backups, schedules), ['备份 one', '计划 daily'])
+  assert.deepEqual(locationReferences('other', backups, schedules), [])
 })
