@@ -51,6 +51,8 @@ metadata:
   name: w7panel-backup-index
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels: { app.kubernetes.io/name: w7panel-backup-index }
   template:
