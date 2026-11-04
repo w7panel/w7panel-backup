@@ -25,3 +25,9 @@ html, body, #app { margin: 0; min-width: 320px; min-height: 100%; }
 .arco-modal { max-width: calc(100vw - 32px); }
 .arco-checkbox-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
 @media (max-width: 760px) { .workspace-tabs .arco-tabs-content { padding: 16px; } .toolbar { align-items: flex-start; flex-direction: column; } .prerequisite { align-items: flex-start; flex-wrap: wrap; } .prerequisite .arco-btn { margin-left: 0; } }
+
+.app-resource-picker { width: 100%; max-height: 320px; overflow: auto; border: 1px solid var(--color-border-2, #e5e6eb); border-radius: 4px; }
+.app-resource-group + .app-resource-group { border-top: 1px solid var(--color-border-2, #e5e6eb); }
+.app-resource-group summary { padding: 9px 12px; cursor: pointer; font-weight: 600; }
+.app-resource-group summary span { color: var(--color-text-3, #86909c); font-weight: 400; }
+.app-resource-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; padding: 4px 12px 12px 28px; }

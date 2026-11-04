@@ -18,15 +18,15 @@ function documents(source) {
 }
 
 export function releaseObjects(release) {
-  const sources = [{ text: release.manifest, optional: false }, ...(release.hooks || []).map(hook => ({ text: hook.manifest, optional: true }))]
+  const sources = [release.manifest, ...(release.hooks || []).map(hook => hook.manifest)]
   for (const file of release.chart?.files || []) {
-    if (file.name?.startsWith('crds/')) sources.push({ text: Buffer.from(file.data, 'base64').toString(), optional: false })
+    if (file.name?.startsWith('crds/')) sources.push(Buffer.from(file.data, 'base64').toString())
   }
-  return sources.flatMap(source => documents(source.text).map(object => ({
+  return sources.flatMap(source => documents(source).map(object => ({
     apiVersion: object.apiVersion,
     kind: object.kind,
     namespace: object.metadata.namespace || release.namespace,
     name: object.metadata.name,
-    optional: source.optional || object.kind === 'Job',
+    optional: true,
   })))
 }

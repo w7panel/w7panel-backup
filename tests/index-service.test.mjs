@@ -11,22 +11,23 @@ test('index discovers AppGroup items, Helm resources, release history, and workl
   const release = { name: 'shop', namespace: 'default', version: 1, info: { status: 'deployed' }, manifest: [
     'apiVersion: apps/v1', 'kind: Deployment', 'metadata:', '  name: web', '---',
     'apiVersion: rbac.authorization.k8s.io/v1', 'kind: ClusterRole', 'metadata:', '  name: shop-reader', '---',
-    'apiVersion: microapp.w7.cc/v1alpha1', 'kind: MicroApp', 'metadata:', '  name: shop',
+    'apiVersion: microapp.w7.cc/v1alpha1', 'kind: MicroApp', 'metadata:', '  name: shop', '---',
+    'apiVersion: w7panel.w7.com/v1alpha1', 'kind: PrivateDNS', 'metadata:', '  name: api-w7-cc',
   ].join('\n') }
   const secret = { apiVersion: 'v1', kind: 'Secret', type: 'helm.sh/release.v1', metadata: { namespace: 'default', name: 'sh.helm.release.v1.shop.v1', labels: { owner: 'helm', name: 'shop' } }, data: { release: Buffer.from(gzipSync(JSON.stringify(release)).toString('base64')).toString('base64') } }
   const app = { apiVersion: 'w7panel.w7.com/v1alpha1', kind: 'AppGroup', metadata: { namespace: 'default', name: 'shop' }, spec: { isHelm: true }, status: { items: [{ apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', name: 'web' }], deployInfo: [] } }
   const discovery = {
-    '/apis/w7panel.w7.com/v1alpha1': [['AppGroup', 'appgroups', true], ['MicroApp', 'microapps', true]],
+    '/apis/w7panel.w7.com/v1alpha1': [['AppGroup', 'appgroups', true], ['MicroApp', 'microapps', true], ['PrivateDNS', 'privatedns', false]],
     '/apis/microapp.w7.cc/v1alpha1': [['MicroApp', 'microapps', true]],
     '/apis/apps/v1': [['Deployment', 'deployments', true]],
     '/apis/networking.k8s.io/v1': [['Ingress', 'ingresses', true]],
     '/apis/rbac.authorization.k8s.io/v1': [['ClusterRole', 'clusterroles', false]],
     '/api/v1': [['Secret', 'secrets', true], ['ConfigMap', 'configmaps', true]],
   }
-  let missingDeployment = false
+  let missingIngress = false
   const kube = http.createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname
-    if ((path.startsWith('/apis/microapp.w7.cc/') && path.endsWith('/microapps/shop')) || (missingDeployment && path.endsWith('/deployments/web'))) { res.writeHead(404).end(); return }
+    if (path.endsWith('/privatedns/api-w7-cc') || (path.startsWith('/apis/microapp.w7.cc/') && path.endsWith('/microapps/shop')) || (missingIngress && path.endsWith('/ingresses/web'))) { res.writeHead(404).end(); return }
     const body = discovery[path] ? { resources: discovery[path].map(([kind, name, namespaced]) => ({ kind, name, namespaced, verbs: ['patch'] })) }
       : path.endsWith('/schedules') || path.endsWith('/restores') || path.endsWith('/appgroups') ? { items: [] }
       : path.endsWith('/secrets') ? { items: [secret] }
@@ -54,10 +55,10 @@ test('index discovers AppGroup items, Helm resources, release history, and workl
       'Deployment/default/web', 'ClusterRole//shop-reader', 'MicroApp/default/shop', 'ConfigMap/default/settings',
     ])
     assert.equal(items.find(item => item.kind === 'MicroApp').apiVersion, 'w7panel.w7.com/v1alpha1')
-    missingDeployment = true
+    missingIngress = true
     const missing = await fetch(`http://127.0.0.1:${indexPort}/v1/apps/default/shop/objects`)
     assert.equal(missing.status, 502)
-    assert.match((await missing.json()).message, /Resource missing: Deployment default\/web/)
+    assert.match((await missing.json()).message, /Resource missing: Ingress default\/web/)
   } finally {
     child.kill()
     await close(kube)
