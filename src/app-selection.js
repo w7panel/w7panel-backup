@@ -5,6 +5,7 @@ export const APP_LABEL = 'backup.w7panel.io/app-'
 export const OBJECT_LABEL = 'backup.w7panel.io/object-id'
 
 export const appKey = app => `${app.metadata.namespace}/${app.metadata.name}`
+export const appsForNamespaces = (apps, selected) => apps.filter(app => !selected.length || selected.includes(app.metadata.namespace))
 export const objectKey = object => `${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`
 
 export const uniqueObjects = objects => [...new Map(objects.map(object => [objectKey(object), object])).values()]
@@ -30,9 +31,8 @@ export async function labelId(value) {
 }
 
 export async function listAppGroups(namespaces) {
-  const results = await Promise.allSettled(namespaces.map(namespace => request(`/apis/w7panel.w7.com/v1alpha1/namespaces/${encodeURIComponent(namespace)}/appgroups`)))
-  if (results.length && results.every(result => result.status === 'rejected')) throw results[0].reason
-  return results.flatMap(result => result.value.items || []).sort((a, b) => appKey(a).localeCompare(appKey(b)))
+  const results = await Promise.all(namespaces.map(namespace => request(`/apis/w7panel.w7.com/v1alpha1/namespaces/${encodeURIComponent(namespace)}/appgroups`)))
+  return results.flatMap(result => result.items || []).sort((a, b) => appKey(a).localeCompare(appKey(b)))
 }
 
 export function appObjects(app) {

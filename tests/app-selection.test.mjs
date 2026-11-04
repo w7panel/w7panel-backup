@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { annotatedApps, appKey, appObjects, labelId, liveAppObjects, loadArchiveObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
+import { annotatedApps, appKey, appObjects, appsForNamespaces, labelId, listAppGroups, liveAppObjects, loadArchiveObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
 import { backupResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('AppGroup deployment manifest becomes a distinct selectable object list', async () => {
@@ -22,6 +22,21 @@ test('multiple AppGroups merge shared resources and old annotations remain reada
   assert.deepEqual(uniqueObjects([shared, shared]).map(objectKey), ['v1/Service/default/web'])
   assert.deepEqual(annotatedApps({ 'backup.w7panel.io/appgroups': '["default/shop","other/api"]' }), ['default/shop', 'other/api'])
   assert.deepEqual(annotatedApps({ 'backup.w7panel.io/app-namespace': 'default', 'backup.w7panel.io/app-name': 'shop' }), ['default/shop'])
+})
+
+test('empty namespace selection includes every AppGroup; selected namespaces filter them', () => {
+  const apps = ['default', 'other', 'third'].map(namespace => ({ metadata: { namespace, name: 'app' } }))
+  assert.deepEqual(appsForNamespaces(apps, []).map(appKey), ['default/app', 'other/app', 'third/app'])
+  assert.deepEqual(appsForNamespaces(apps, ['other', 'third']).map(appKey), ['other/app', 'third/app'])
+})
+
+test('AppGroup discovery fails if any namespace cannot be read', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async path => path.includes('/namespaces/other/')
+    ? Response.json({ message: 'forbidden' }, { status: 403 })
+    : Response.json({ items: [{ metadata: { namespace: 'default', name: 'app' } }] })
+  try { await assert.rejects(() => listAppGroups(['default', 'other']), /forbidden/) }
+  finally { globalThis.fetch = originalFetch }
 })
 
 test('app labels hash without browser crypto.subtle on HTTP previews', async () => {
