@@ -41,7 +41,7 @@ push-zpk:
 	@test -f ./dist/dist.zip || { echo 'Missing dist/dist.zip' >&2; exit 1; }
 	@command -v zpk >/dev/null 2>&1 || { echo 'zpk is not installed' >&2; exit 1; }
 	@zpk --help >/dev/null 2>&1 || { echo 'Installed zpk cannot run' >&2; exit 1; }
-	@zpk login --username=w7admin --password="$${ZPK_IDC_PASSWORD}" --host=zpk.fan.b2.sz.w7.com
+	@zpk login --username=w7admin --password="$${ZPK_IDC_PASSWORD}" --host=zpk.w7.cc
 	zpk use --name=w7panel-backup
 	zpk attach add --path=$(CHART_PACKAGE) --type=helm
 	zpk attach add --path=./dist/dist.zip --type=frontend
