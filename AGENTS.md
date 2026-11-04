@@ -1,5 +1,9 @@
 # Velero 备份排障记录
 
+## 统一发布命令
+
+在项目根目录设置 `ZPK_IDC_PASSWORD` 后执行 `make full VERSION=x.y.z`，依次构建 UI、打包 Helm、推送 ZPK。本项目没有自有镜像，`build-image` 会跳过。单独执行阶段可用 `make build-ui`、`make build-helm VERSION=x.y.z`、`make push-zpk VERSION=x.y.z`；原有 `make all` 和 `CNB_BRANCH` 用法保留。
+
 在 W7Panel 集群备份页面排障时，先查看 `Backup.status.validationErrors` 和 `BackupStorageLocation.status.message`；页面上的 `FailedValidation`、`Unavailable` 只是状态，不是具体原因。`FailedValidation` 的备份不会自动重试，修好存储位置后需用新名称创建备份。
 
 - **本地 S3 无法解析**：确认 `local` 存储位置的 `spec.config.s3Url` 指向当前 Helm release 对应的 S3 Service。升级自内置 MinIO 时，设置 `legacyMinio.enabled=true` 以保留旧 Service、PVC 和只读 `default` 位置。存储位置变为 `Available` 后再创建备份。
