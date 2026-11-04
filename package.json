@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bash ./dev.sh",
     "build": "vite build",
-    "build:index": "esbuild charts/w7panel-backup/controller/server.mjs --bundle --minify --platform=node --format=esm --outfile=charts/w7panel-backup/controller/index.mjs",
+    "build:index": "esbuild charts/w7panel-backup/controller/server.mjs --bundle --minify --platform=node --format=esm --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=charts/w7panel-backup/controller/index.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
