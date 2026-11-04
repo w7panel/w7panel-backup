@@ -82,16 +82,19 @@ function isAppBackup(backup) {
 async function openRestore(backup) {
   const issue = restoreIssue(backup)
   if (issue) { error.value = issue; return }
+  const name = `${formName('restore')}-${Math.floor(Math.random() * 1e8).toString().padStart(8, '0')}`
+  const sourceNamespaces = backup.spec?.includedNamespaces?.filter(item => item !== '*') || []
+  const namespaces = sourceNamespaces.includes('default') || !sourceNamespaces.length ? ['default'] : sourceNamespaces
   try {
     const archive = await loadArchiveObjects(veleroNamespace.value, backup.metadata.name)
     const items = archive.items || []
     if (!items.length && isAppBackup(backup)) throw new Error('备份归档中没有可选的应用资源')
     const appIds = [...new Set(items.map(item => item.appId).filter(Boolean))]
-    restoreForm.value = { name: formName('restore'), backupName: backup.metadata.name, namespaces: backup.spec?.includedNamespaces?.filter(item => item !== '*') || [], mappingText: '', appObjects: items, appNamespace: '', appIds: [], previousAppIds: [], selectedObjects: [] }
+    restoreForm.value = { name, backupName: backup.metadata.name, namespaces, mappingText: '', appObjects: items, appNamespace: archiveNamespaceOptions(items).some(item => item.value === 'default') ? 'default' : '', appIds: [], previousAppIds: [], selectedObjects: [] }
     dialogs.value.restore = true
   } catch (cause) {
     if (isAppBackup(backup)) { error.value = `无法读取新备份的对象清单：${cause.message}`; return }
-    restoreForm.value = { name: formName('restore'), backupName: backup.metadata.name, namespaces: backup.spec?.includedNamespaces?.filter(item => item !== '*') || [], mappingText: '', appObjects: [] }
+    restoreForm.value = { name, backupName: backup.metadata.name, namespaces, mappingText: '', appObjects: [] }
     dialogs.value.restore = true
   }
 }
