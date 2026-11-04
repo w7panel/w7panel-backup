@@ -1,4 +1,4 @@
-import { request } from './velero.js'
+import { props, request } from './velero.js'
 import { referencedObjects } from '../charts/w7panel-backup/controller/references.mjs'
 import sha256 from 'js-sha256'
 
@@ -88,4 +88,17 @@ export async function markObjects(app, objects) {
 
 export function archivePath(namespace, backupName) {
   return `/api/v1/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index/proxy/v1/backups/${encodeURIComponent(backupName)}/objects`
+}
+
+export async function loadArchiveObjects(namespace, backupName) {
+  const panelProxy = props()?.panelProxy
+  if (typeof panelProxy !== 'function') return request(archivePath(namespace, backupName))
+  const response = await panelProxy(`/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index:8080/proxy-root/v1/backups/${encodeURIComponent(backupName)}/objects`)
+  if (!response.ok) {
+    const body = await response.text()
+    let message = body
+    try { message = JSON.parse(body).message || body } catch { /* response is not JSON */ }
+    throw new Error(message || `无法读取备份对象清单 (${response.status})`)
+  }
+  return response.json()
 }

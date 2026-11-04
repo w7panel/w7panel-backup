@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { annotatedApps, appKey, appObjects, labelId, liveAppObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
+import { annotatedApps, appKey, appObjects, labelId, liveAppObjects, loadArchiveObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from '../src/app-selection.js'
 import { backupResource, restoreResource, scheduleResource } from '../src/velero.js'
 
 test('AppGroup deployment manifest becomes a distinct selectable object list', async () => {
@@ -29,6 +29,31 @@ test('app labels hash without browser crypto.subtle on HTTP previews', async () 
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: {} })
   try { assert.equal(await labelId('default/中文'), '7d1dfdc437738ada8f06d77fa2afc18c') }
   finally { if (original) Object.defineProperty(globalThis, 'crypto', original); else delete globalThis.crypto }
+})
+
+test('restore reads its object index through the host Service proxy', async () => {
+  const originalWindow = globalThis.window
+  const calls = []
+  globalThis.window = { __POWERED_BY_WUJIE__: true, $wujie: { props: { panelProxy: async path => {
+    calls.push(path)
+    return Response.json({ items: [{ name: 'shop' }] })
+  } } } }
+  try {
+    assert.deepEqual(await loadArchiveObjects('default', 'backup-1'), { items: [{ name: 'shop' }] })
+    assert.deepEqual(calls, ['/namespaces/default/services/w7panel-backup-index:8080/proxy-root/v1/backups/backup-1/objects'])
+    globalThis.window.$wujie.props.panelProxy = async () => Response.json({ message: 'index unavailable' }, { status: 503 })
+    await assert.rejects(() => loadArchiveObjects('default', 'backup-1'), /index unavailable/)
+  } finally { if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow }
+})
+
+test('local preview keeps its direct index proxy', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedPath
+  globalThis.fetch = async path => { requestedPath = path; return Response.json({ items: [] }) }
+  try {
+    assert.deepEqual(await loadArchiveObjects('default', 'backup-1'), { items: [] })
+    assert.equal(requestedPath, '/k8s-proxy/api/v1/namespaces/default/services/w7panel-backup-index/proxy/v1/backups/backup-1/objects')
+  } finally { globalThis.fetch = originalFetch }
 })
 
 test('adding and removing apps keeps manual deselections and selects only new resources', () => {

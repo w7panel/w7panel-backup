@@ -40,8 +40,8 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, resolveComponent } from 'vue'
-import { backupResource, create, discoverResources, downloadEndpointIssue, downloadRequestResource, get, list, namespaces, remove, request, restoreLocationIssue, restoreResource, scheduleResource, update, veleroDeployment } from './velero'
-import { annotatedApps, appKey, archivePath, labelId, listAppGroups, liveAppObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from './app-selection'
+import { backupResource, create, discoverResources, downloadEndpointIssue, downloadRequestResource, get, list, namespaces, remove, restoreLocationIssue, restoreResource, scheduleResource, update, veleroDeployment } from './velero'
+import { annotatedApps, appKey, labelId, listAppGroups, liveAppObjects, loadArchiveObjects, markObjects, objectKey, selectedUnion, uniqueObjects } from './app-selection'
 
 const ScopePicker = defineComponent({ props: { modelValue: Array, items: Array }, emits: ['update:modelValue'], setup(props, { emit }) { const FormItem = resolveComponent('a-form-item'), Select = resolveComponent('a-select'); return () => h(FormItem, { label: '命名空间范围' }, { default: () => h(Select, { modelValue: props.modelValue, 'onUpdate:modelValue': value => emit('update:modelValue', value), options: (props.items || []).map(value => ({ label: value, value })), multiple: true, allowClear: true, placeholder: '留空表示全部命名空间' }) }) } })
 const veleroNamespace = ref('velero'), tab = ref('backups'), loading = ref(false), saving = ref(false), downloading = ref(''), ready = ref(false), error = ref(''), backupSearch = ref('')
@@ -80,7 +80,7 @@ async function openRestore(backup) {
   const issue = restoreIssue(backup)
   if (issue) { error.value = issue; return }
   try {
-    const archive = await request(archivePath(veleroNamespace.value, backup.metadata.name))
+    const archive = await loadArchiveObjects(veleroNamespace.value, backup.metadata.name)
     const items = archive.items || []
     if (!items.length && isAppBackup(backup)) throw new Error('备份归档中没有可选的应用资源')
     const appIds = [...new Set(items.map(item => item.appId).filter(Boolean))]
