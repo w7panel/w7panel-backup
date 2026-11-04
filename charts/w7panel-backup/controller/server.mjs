@@ -87,7 +87,14 @@ async function liveObjects(app) {
     if (seen.has(key)) continue
     seen.add(key)
     let current
-    try { current = await k8s(path) } catch (error) { if (error.message.includes(': 404 ') && candidate.optional) continue; if (error.message.includes(': 404 ')) throw new Error(`Resource missing: ${object.kind} ${object.namespace}/${object.name}`); throw error }
+    try { current = await k8s(path) } catch (error) {
+      if (error.message.includes(': 404 ') && object.apiVersion === 'microapp.w7.cc/v1alpha1' && object.kind === 'MicroApp') {
+        object.apiVersion = 'w7panel.w7.com/v1alpha1'
+        try { current = await k8s((await resourcePath(object)).path) } catch (fallbackError) { error = fallbackError }
+      }
+      if (!current) { if (error.message.includes(': 404 ') && candidate.optional) continue; if (error.message.includes(': 404 ')) throw new Error(`Resource missing: ${object.kind} ${object.namespace}/${object.name}`); throw error }
+    }
+    if (object.apiVersion !== candidate.apiVersion) { const migratedKey = `${object.apiVersion}/${object.kind}/${object.namespace}/${object.name}`; if (seen.has(migratedKey)) continue; seen.add(migratedKey) }
     found.push(object)
     values.push(...referencedObjects({ ...current, kind: object.kind, metadata: { ...current.metadata, namespace: object.namespace } }).map(item => ({ ...item, optional: true })))
   }
