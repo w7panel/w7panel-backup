@@ -90,7 +90,7 @@ spec:
     name: local-s3-credentials
     key: cloud
   config:
-    region: local
+    region: us-east-1
     s3ForcePathStyle: "true"
     s3Url: {{ printf "http://%s:7070" (include "w7panel-backup.s3Name" .) | quote }}
 {{- end }}
