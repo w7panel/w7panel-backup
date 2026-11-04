@@ -14,6 +14,7 @@ test('AppGroup deployment manifest becomes a distinct selectable object list', a
   assert.equal(objects.length, 3)
   assert.equal(new Set(objects.map(objectKey)).size, 3)
   assert.equal((await labelId(objectKey(objects[1]))).length, 32)
+  assert.equal(await labelId('abc'), 'ba7816bf8f01cfea414140de5dae2223')
 })
 
 test('multiple AppGroups merge shared resources and old annotations remain readable', () => {
@@ -21,6 +22,13 @@ test('multiple AppGroups merge shared resources and old annotations remain reada
   assert.deepEqual(uniqueObjects([shared, shared]).map(objectKey), ['v1/Service/default/web'])
   assert.deepEqual(annotatedApps({ 'backup.w7panel.io/appgroups': '["default/shop","other/api"]' }), ['default/shop', 'other/api'])
   assert.deepEqual(annotatedApps({ 'backup.w7panel.io/app-namespace': 'default', 'backup.w7panel.io/app-name': 'shop' }), ['default/shop'])
+})
+
+test('app labels hash without browser crypto.subtle on HTTP previews', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: {} })
+  try { assert.equal(await labelId('default/中文'), '7d1dfdc437738ada8f06d77fa2afc18c') }
+  finally { if (original) Object.defineProperty(globalThis, 'crypto', original); else delete globalThis.crypto }
 })
 
 test('adding and removing apps keeps manual deselections and selects only new resources', () => {

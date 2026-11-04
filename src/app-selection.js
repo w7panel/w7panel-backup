@@ -1,5 +1,6 @@
 import { request } from './velero.js'
 import { referencedObjects } from '../charts/w7panel-backup/controller/references.mjs'
+import sha256 from 'js-sha256'
 
 export const APP_LABEL = 'backup.w7panel.io/app-'
 export const OBJECT_LABEL = 'backup.w7panel.io/object-id'
@@ -26,9 +27,7 @@ export function annotatedApps(annotations = {}) {
 }
 
 export async function labelId(value) {
-  const bytes = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest).slice(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
+  return sha256(value).slice(0, 32)
 }
 
 export async function listAppGroups(namespaces) {
