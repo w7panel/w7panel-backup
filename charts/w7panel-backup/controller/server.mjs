@@ -5,8 +5,9 @@ import { archiveObjects } from './archive.mjs'
 import { referencedObjects } from './references.mjs'
 
 const namespace = process.env.POD_NAMESPACE || 'velero'
-const api = `https://${process.env.KUBERNETES_SERVICE_HOST}:${process.env.KUBERNETES_SERVICE_PORT_HTTPS || 443}`
-const token = fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8')
+const localTest = process.env.LOCAL_TEST === '1'
+const api = localTest ? `http://127.0.0.1:${process.env.KUBE_PROXY_PORT || 8013}` : `https://${process.env.KUBERNETES_SERVICE_HOST}:${process.env.KUBERNETES_SERVICE_PORT_HTTPS || 443}`
+const token = localTest ? '' : fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8')
 const appLabel = 'backup.w7panel.io/app-'
 const objectLabel = 'backup.w7panel.io/object-id'
 const id = value => createHash('sha256').update(value).digest('hex').slice(0, 32)
@@ -25,7 +26,7 @@ function appKeys(annotations = {}) {
 }
 
 async function k8s(path, method = 'GET', body) {
-  const response = await fetch(`${api}${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': method === 'PATCH' ? 'application/merge-patch+json' : 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
+  const response = await fetch(`${api}${path}`, { method, headers: { ...(localTest ? {} : { Authorization: `Bearer ${token}` }), ...(body ? { 'Content-Type': method === 'PATCH' ? 'application/merge-patch+json' : 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
   if (!response.ok) throw new Error(`Kubernetes ${method} ${path}: ${response.status} ${await response.text()}`)
   return response.status === 204 ? null : response.json()
 }
@@ -120,7 +121,7 @@ http.createServer(async (req, res) => {
     console.error(error)
     res.writeHead(502, { 'Content-Type': 'application/json' }).end(JSON.stringify({ message: '无法读取备份归档中的资源清单' }))
   }
-}).listen(8080, '0.0.0.0')
+}).listen(localTest ? Number(process.env.INDEX_PORT || 18023) : 8080, localTest ? '127.0.0.1' : '0.0.0.0')
 
 await reconcile()
 setInterval(reconcile, 30000)
