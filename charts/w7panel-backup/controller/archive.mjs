@@ -14,7 +14,7 @@ async function* tarEntries(stream) {
   for await (const chunk of stream) {
     buffer = Buffer.concat([buffer, chunk])
     while (buffer.length) {
-      if (padding) { const take = Math.min(padding, buffer.length); buffer = buffer.subarray(take); padding -= take; if (padding) break }
+      if (padding && !remaining) { const take = Math.min(padding, buffer.length); buffer = buffer.subarray(take); padding -= take; if (padding) break }
       if (!remaining) {
         if (buffer.length < 512) break
         const header = buffer.subarray(0, 512); buffer = buffer.subarray(512)

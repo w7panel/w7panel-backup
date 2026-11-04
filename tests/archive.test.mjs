@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { gzipSync } from 'node:zlib'
+import { randomBytes } from 'node:crypto'
 import { archiveAppGroups, archiveInventory, archiveObjects } from '../charts/w7panel-backup/controller/archive.mjs'
 
 function entry(name, value) {
@@ -35,4 +36,14 @@ test('archive inventory lists objects without exposing Secret data and retains A
   assert.deepEqual((await archiveInventory(url)).map(item => item.kind), ['AppGroup', 'Secret'])
   assert.equal((await archiveAppGroups(url, ['groupid']))[0].status.deployInfo.length, 1)
   assert.equal((await archiveObjects(url, ['appid'])).find(item => item.kind === 'Secret').helmRelease, true)
+})
+
+test('streamed backup archive retains a Helm Secret when its JSON spans chunks', async () => {
+  const secret = { apiVersion: 'v1', kind: 'Secret', type: 'helm.sh/release.v1', metadata: { namespace: 'default', name: 'sh.helm.release.v1.shop.v1', labels: { 'backup.w7panel.io/app-appid': 'true', 'backup.w7panel.io/object-id': 'secretid' } }, data: { release: randomBytes(32768).toString('base64') } }
+  const archive = gzipSync(Buffer.concat([entry('resources/secrets/namespaces/default/sh.helm.release.v1.shop.v1.json', secret), Buffer.alloc(1024)]))
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(new ReadableStream({ start(controller) { for (let offset = 0; offset < archive.length; offset += 97) controller.enqueue(archive.subarray(offset, offset + 97)); controller.close() } }))
+  try {
+    assert.deepEqual(await archiveObjects('http://example.invalid/backup', ['appid']), [{ apiVersion: 'v1', kind: 'Secret', namespace: 'default', name: secret.metadata.name, id: 'secretid', appId: 'appid', helmRelease: true }])
+  } finally { globalThis.fetch = originalFetch }
 })
