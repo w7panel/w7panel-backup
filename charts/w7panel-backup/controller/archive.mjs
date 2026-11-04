@@ -37,21 +37,45 @@ async function* tarEntries(stream) {
   }
 }
 
-export async function archiveObjects(url, appIds) {
+async function* archiveEntries(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120000) })
   if (!response.ok) throw new Error(`Backup archive download failed: ${response.status}`)
-  const found = new Map()
   for await (const entry of tarEntries(Readable.fromWeb(response.body).pipe(createGunzip()))) {
+    if (!entry.name.startsWith('resources/')) continue
     try {
       const object = JSON.parse(entry.data)
+      if (object.apiVersion && object.kind && object.metadata?.name) yield object
+    } catch { /* unrelated archive JSON */ }
+  }
+}
+
+export async function archiveAppGroups(url, objectIds) {
+  const found = []
+  for await (const object of archiveEntries(url)) {
+    if (object.kind === 'AppGroup' && object.metadata.labels?.[objectLabel] && objectIds.includes(object.metadata.labels[objectLabel])) found.push(object)
+  }
+  return [...new Map(found.map(object => [`${object.metadata.namespace}/${object.metadata.name}`, object])).values()]
+}
+
+export async function archiveInventory(url) {
+  const found = new Map()
+  for await (const object of archiveEntries(url)) {
+    const value = { apiVersion: object.apiVersion, kind: object.kind, namespace: object.metadata.namespace || '', name: object.metadata.name }
+    found.set(`${value.apiVersion}/${value.kind}/${value.namespace}/${value.name}`, value)
+  }
+  return [...found.values()]
+}
+
+export async function archiveObjects(url, appIds) {
+  const found = new Map()
+  for await (const object of archiveEntries(url)) {
       const labels = object.metadata?.labels || {}
-      if (!object.apiVersion || !object.kind || !object.metadata?.name || !labels[objectLabel]) continue
+      if (!labels[objectLabel]) continue
       for (const appId of appIds) {
         if (labels[`${appLabel}${appId}`] !== 'true') continue
-        const value = { apiVersion: object.apiVersion, kind: object.kind, namespace: object.metadata.namespace || '', name: object.metadata.name, id: labels[objectLabel], appId }
+        const value = { apiVersion: object.apiVersion, kind: object.kind, namespace: object.metadata.namespace || '', name: object.metadata.name, id: labels[objectLabel], appId, ...(object.type === 'helm.sh/release.v1' ? { helmRelease: true } : {}) }
         found.set(`${value.apiVersion}/${value.kind}/${value.namespace}/${value.name}/${appId}`, value)
       }
-    } catch { /* unrelated archive JSON */ }
   }
   return [...found.values()]
 }

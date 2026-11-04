@@ -6,6 +6,8 @@ The UI displays locations as read-only. Backups contain Kubernetes resource mani
 not volume data or snapshots.
 
 ```sh
+npm ci
+npm run build:index
 helm dependency build charts/w7panel-backup
 helm upgrade --install w7panel-backup charts/w7panel-backup -n velero --create-namespace
 ```
@@ -39,11 +41,13 @@ If an upgrade fails, roll back the Helm release; no object data is migrated.
 
 ## Application selection
 
-The UI reads W7Panel AppGroups and their `status.deployInfo.resourcesList`.
+The index service reads AppGroup `status.items`, `status.deployInfo.resourcesList`,
+child AppGroups, and Helm release Secrets. It adds objects from the active
+Helm release manifest, hooks, and chart CRDs, including cluster-scoped objects.
 Backup, restore, and schedules accept multiple AppGroups. Shared resources are
 shown once, and newly selected applications default their resources to selected.
-For Deployments, StatefulSets, and DaemonSets, it also includes existing
-ConfigMaps and Secrets directly referenced by their Pod templates. Users can
+For workloads, it also includes existing ConfigMaps, Secrets, ServiceAccounts,
+and PVC manifests directly referenced by their Pod templates. Users can
 uncheck any resource; Secret contents are never shown in the selector.
 It needs permission to list AppGroups in the visible namespaces, discover and
 patch selected Kubernetes resources, and access
@@ -53,6 +57,10 @@ AppGroup resources, and read permission for Velero backup downloads. Limit
 access to the microapp and index Service Proxy through your existing W7Panel
 RBAC. Application schedules reconcile new resource labels every 30 seconds;
 failed sync pauses the schedule until it succeeds.
+AppGroup `status` must be optional in the target cluster CRD so Velero can
+create restored objects. The index service restores archived AppGroup status
+after Velero finishes. Helm release restoration requires the original namespace;
+same-name target objects are retained and listed before and after restoration.
 
 ## Downloads and cross-cluster restore
 

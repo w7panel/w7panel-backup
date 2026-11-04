@@ -8,11 +8,11 @@ test('AppGroup deployment manifest becomes a distinct selectable object list', a
     { apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web' },
     { apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web' },
     { apiVersion: 'v1', kind: 'Service', namespace: 'other', name: 'web' },
-  ] }] } }
+  ] }], items: [{ apiVersion: 'networking.k8s.io/v1', kind: 'Ingress', name: 'web' }] } }
   const objects = appObjects(app)
   assert.equal(appKey(app), 'default/shop')
-  assert.equal(objects.length, 3)
-  assert.equal(new Set(objects.map(objectKey)).size, 3)
+  assert.equal(objects.length, 4)
+  assert.equal(new Set(objects.map(objectKey)).size, 4)
   assert.equal((await labelId(objectKey(objects[1]))).length, 32)
   assert.equal(await labelId('abc'), 'ba7816bf8f01cfea414140de5dae2223')
 })
@@ -64,24 +64,14 @@ test('adding and removing apps keeps manual deselections and selects only new re
   assert.deepEqual(selectedUnion([a, shared, b], [objectKey(a), objectKey(b)], [shared, b]), [objectKey(b)])
 })
 
-test('live app resources add referenced objects and skip missing references', async () => {
+test('live app resources come from the shared index service', async () => {
   const app = { apiVersion: 'w7panel.w7.com/v1alpha1', metadata: { namespace: 'default', name: 'shop' }, status: { deployInfo: [{ resourcesList: [{ apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web' }] }] } }
   const originalFetch = globalThis.fetch
-  globalThis.fetch = async url => {
-    if (url === '/k8s-proxy/apis/w7panel.w7.com/v1alpha1') return Response.json({ resources: [{ kind: 'AppGroup', name: 'appgroups', namespaced: true, verbs: ['patch'] }] })
-    if (url === '/k8s-proxy/apis/apps/v1') return Response.json({ resources: [{ kind: 'Deployment', name: 'deployments', namespaced: true, verbs: ['patch'] }] })
-    if (url === '/k8s-proxy/api/v1') return Response.json({ resources: ['ConfigMap', 'Secret'].map(kind => ({ kind, name: `${kind.toLowerCase()}s`, namespaced: true, verbs: ['patch'] })) })
-    if (url.endsWith('/deployments/web')) return Response.json({ spec: { template: { spec: { volumes: [{ configMap: { name: 'settings' } }, { secret: { secretName: 'missing' } }] } } } })
-    if (url.endsWith('/secrets/missing')) return Response.json({ message: 'Not Found' }, { status: 404 })
-    return Response.json({ metadata: { namespace: 'default' } })
-  }
+  const calls = []
+  globalThis.fetch = async url => { calls.push(url); return Response.json({ items: [{ apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'default', name: 'web' }] }) }
   try {
-    assert.deepEqual((await liveAppObjects(app)).map(objectKey), [
-      'w7panel.w7.com/v1alpha1/AppGroup/default/shop', 'apps/v1/Deployment/default/web', 'v1/ConfigMap/default/settings',
-    ])
-    const available = globalThis.fetch
-    globalThis.fetch = url => url.endsWith('/configmaps/settings') ? Promise.resolve(Response.json({ message: 'Forbidden' }, { status: 403 })) : available(url)
-    await assert.rejects(() => liveAppObjects(app), /Forbidden/)
+    assert.deepEqual((await liveAppObjects(app)).map(objectKey), ['apps/v1/Deployment/default/web'])
+    assert.deepEqual(calls, ['/k8s-proxy/api/v1/namespaces/default/services/w7panel-backup-index/proxy/v1/apps/default/shop/objects'])
   } finally { globalThis.fetch = originalFetch }
 })
 
@@ -92,6 +82,7 @@ test('single-object backup and restore selectors exclude unselected objects', ()
   assert.deepEqual(restore.spec.orLabelSelectors, backup.spec.orLabelSelectors)
   assert.equal(backup.spec.includeClusterResources, true)
   assert.throws(() => backupResource({ name: 'empty', objectIds: [] }), /至少选择/)
+  assert.equal(restore.metadata.annotations['backup.w7panel.io/hydrate-appgroups'], 'true')
 })
 
 test('app schedule includes future app resources but excludes unchecked identities', () => {

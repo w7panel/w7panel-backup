@@ -1,8 +1,8 @@
-const workloads = new Set(['Deployment', 'StatefulSet', 'DaemonSet'])
+const workloads = new Set(['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob'])
 
 export function referencedObjects(workload) {
   if (!workloads.has(workload.kind) || !workload.metadata?.namespace) return []
-  const pod = workload.spec?.template?.spec
+  const pod = (workload.kind === 'CronJob' ? workload.spec?.jobTemplate?.spec : workload.spec)?.template?.spec
   if (!pod) return []
   const found = new Map()
   const add = (kind, name) => {
@@ -12,6 +12,7 @@ export function referencedObjects(workload) {
   }
 
   for (const volume of pod.volumes || []) {
+    add('PersistentVolumeClaim', volume.persistentVolumeClaim?.claimName)
     add('ConfigMap', volume.configMap?.name)
     add('Secret', volume.secret?.secretName)
     add('Secret', volume.csi?.nodePublishSecretRef?.name)
@@ -20,6 +21,7 @@ export function referencedObjects(workload) {
       add('Secret', source.secret?.name)
     }
   }
+  add('ServiceAccount', pod.serviceAccountName)
   for (const ref of pod.imagePullSecrets || []) add('Secret', ref.name)
   for (const container of [...(pod.initContainers || []), ...(pod.containers || []), ...(pod.ephemeralContainers || [])]) {
     for (const source of container.envFrom || []) {

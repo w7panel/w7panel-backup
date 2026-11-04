@@ -8,8 +8,9 @@ for (const kind of ['Deployment', 'StatefulSet', 'DaemonSet']) {
       volumes: [
         { configMap: { name: 'settings' } }, { secret: { secretName: 'tls' } },
         { projected: { sources: [{ configMap: { name: 'settings' } }, { secret: { name: 'token' } }] } },
-        { csi: { nodePublishSecretRef: { name: 'storage' } } },
+        { csi: { nodePublishSecretRef: { name: 'storage' } } }, { persistentVolumeClaim: { claimName: 'data' } },
       ],
+      serviceAccountName: 'shop',
       imagePullSecrets: [{ name: 'registry' }],
       initContainers: [{ envFrom: [{ configMapRef: { name: 'init' } }] }],
       containers: [{ envFrom: [{ secretRef: { name: 'tls' } }], env: [
@@ -22,10 +23,12 @@ for (const kind of ['Deployment', 'StatefulSet', 'DaemonSet']) {
       { apiVersion: 'v1', kind: 'Secret', namespace: 'shop', name: 'tls' },
       { apiVersion: 'v1', kind: 'Secret', namespace: 'shop', name: 'token' },
       { apiVersion: 'v1', kind: 'Secret', namespace: 'shop', name: 'storage' },
+      { apiVersion: 'v1', kind: 'PersistentVolumeClaim', namespace: 'shop', name: 'data' },
+      { apiVersion: 'v1', kind: 'ServiceAccount', namespace: 'shop', name: 'shop' },
       { apiVersion: 'v1', kind: 'Secret', namespace: 'shop', name: 'registry' },
       { apiVersion: 'v1', kind: 'ConfigMap', namespace: 'shop', name: 'init' },
       { apiVersion: 'v1', kind: 'Secret', namespace: 'shop', name: 'password' },
     ])
-    assert.deepEqual(referencedObjects({ ...workload, kind: 'Job' }), [])
+    assert.deepEqual(referencedObjects({ ...workload, kind: 'Job' }), referencedObjects(workload))
   })
 }

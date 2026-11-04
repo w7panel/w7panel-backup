@@ -1,5 +1,4 @@
 import { props, request } from './velero.js'
-import { referencedObjects } from '../charts/w7panel-backup/controller/references.mjs'
 import sha256 from 'js-sha256'
 
 export const APP_LABEL = 'backup.w7panel.io/app-'
@@ -40,6 +39,7 @@ export function appObjects(app) {
   const values = (app.status?.deployInfo || []).flatMap(item => item.resourcesList || []).map(item => ({
     apiVersion: item.apiVersion, kind: item.kind, namespace: item.namespace || app.metadata.namespace, name: item.name,
   }))
+  values.push(...(app.status?.items || []).map(item => ({ apiVersion: item.apiVersion, kind: item.kind, namespace: app.metadata.namespace, name: item.name })))
   values.unshift({ apiVersion: app.apiVersion || 'w7panel.w7.com/v1alpha1', kind: 'AppGroup', namespace: app.metadata.namespace, name: app.metadata.name })
   return [...new Map(values.filter(item => item.apiVersion && item.kind && item.namespace && item.name).map(item => [objectKey(item), item])).values()]
 }
@@ -55,23 +55,9 @@ async function apiPath(object) {
   return `${base}${resource.namespaced ? `/namespaces/${encodeURIComponent(object.namespace)}` : ''}/${resource.name}/${encodeURIComponent(object.name)}`
 }
 
-export async function liveAppObjects(app) {
-  const values = []
-  const pending = appObjects(app)
-  const seen = new Set()
-  for (const object of pending) {
-    const key = objectKey(object)
-    if (seen.has(key)) continue
-    seen.add(key)
-    try {
-      const current = await request(await apiPath(object))
-      values.push(object)
-      pending.push(...referencedObjects({ ...current, kind: object.kind, metadata: { ...current.metadata, namespace: object.namespace } }))
-    } catch (cause) {
-      if (cause.status !== 404) throw cause
-    }
-  }
-  return values
+export async function liveAppObjects(app, veleroNamespace = 'default') {
+  const path = `/v1/apps/${encodeURIComponent(app.metadata.namespace)}/${encodeURIComponent(app.metadata.name)}/objects`
+  return (await indexObjects(veleroNamespace, path)).items || []
 }
 
 export async function markObjects(app, objects) {
@@ -86,14 +72,28 @@ export async function markObjects(app, objects) {
   return { appId, objects: marked }
 }
 
+export async function existingObjects(objects, mapping = {}) {
+  const existing = []
+  for (const object of objects) {
+    const target = { ...object, namespace: mapping[object.namespace] || object.namespace }
+    try {
+      await request(await apiPath(target))
+      existing.push(object)
+    } catch (cause) {
+      if (cause.status !== 404) throw cause
+    }
+  }
+  return existing
+}
+
 export function archivePath(namespace, backupName) {
   return `/api/v1/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index/proxy/v1/backups/${encodeURIComponent(backupName)}/objects`
 }
 
-export async function loadArchiveObjects(namespace, backupName) {
+async function indexObjects(namespace, path) {
   const panelProxy = props()?.panelProxy
-  if (typeof panelProxy !== 'function') return request(archivePath(namespace, backupName))
-  const response = await panelProxy(`/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index:8080/proxy-root/v1/backups/${encodeURIComponent(backupName)}/objects`)
+  if (typeof panelProxy !== 'function') return request(`/api/v1/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index/proxy${path}`)
+  const response = await panelProxy(`/namespaces/${encodeURIComponent(namespace)}/services/w7panel-backup-index:8080/proxy-root${path}`)
   if (!response.ok) {
     const body = await response.text()
     let message = body
@@ -101,4 +101,16 @@ export async function loadArchiveObjects(namespace, backupName) {
     throw new Error(message || `无法读取备份对象清单 (${response.status})`)
   }
   return response.json()
+}
+
+export async function loadArchiveObjects(namespace, backupName) {
+  return indexObjects(namespace, `/v1/backups/${encodeURIComponent(backupName)}/objects`)
+}
+
+export async function loadBackupInventory(namespace, backupName) {
+  return indexObjects(namespace, `/v1/backups/${encodeURIComponent(backupName)}/inventory`)
+}
+
+export async function loadRestoreResults(namespace, restoreName) {
+  return indexObjects(namespace, `/v1/restores/${encodeURIComponent(restoreName)}/results`)
 }

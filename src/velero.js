@@ -122,13 +122,13 @@ export function downloadEndpointIssue(endpoint) {
   } catch { return '请为存储位置配置有效的公网 HTTPS S3/COS Endpoint' }
 }
 
-export function restoreResource({ name, backupName, namespaces: selected, mapping = {}, objectIds }) {
+export function restoreResource({ name, backupName, namespaces: selected, mapping = {}, objectIds, existingAppGroups = [], existingObjectKeys = [] }) {
   if (!validName(name)) throw new Error('恢复名称必须为 63 字符以内的小写 DNS 名称')
   if (!backupName) throw new Error('请选择一个备份')
   if (objectIds && !objectIds.length) throw new Error('至少选择一个恢复资源')
   const namespaceMapping = Object.fromEntries(Object.entries(mapping).filter(([from, to]) => from && to && from !== to))
   return {
-    apiVersion: 'velero.io/v1', kind: 'Restore', metadata: { name },
+    apiVersion: 'velero.io/v1', kind: 'Restore', metadata: { name, ...(objectIds ? { annotations: { 'backup.w7panel.io/hydrate-appgroups': 'true', 'backup.w7panel.io/existing-appgroups': JSON.stringify(existingAppGroups), 'backup.w7panel.io/existing-objects': JSON.stringify(existingObjectKeys) } } : {}) },
     spec: {
       backupName, includedNamespaces: selected?.length ? selected : ['*'],
       includeClusterResources: false, existingResourcePolicy: 'none',
