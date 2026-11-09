@@ -74,7 +74,14 @@ export function validName(value) { return /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test
 export const LOCATION_LABEL = 'backup.w7panel.io/ui-managed'
 export const locationSecretName = name => `bsl-${name}`
 export const managedLocation = location => location?.metadata?.labels?.[LOCATION_LABEL] === 'true' && !location.spec?.default && location.spec?.credential?.name === locationSecretName(location.metadata.name)
+export const editableLocation = location => Boolean(
+  location?.spec?.provider === 'aws' && !location.spec.default &&
+  location.spec.credential?.name && location.spec.credential?.key &&
+  location.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'Helm' &&
+  !location.metadata?.annotations?.['meta.helm.sh/release-name'],
+)
 export const writableLocation = location => location?.status?.phase === 'Available' && location.spec?.accessMode !== 'ReadOnly'
+export const sharedLocationCredential = (location, locations) => locations.some(item => item.metadata.name !== location.metadata.name && item.spec?.credential?.name === location.spec?.credential?.name)
 export function locationReferences(name, backups, schedules) {
   return [...backups.filter(item => item.spec?.storageLocation === name).map(item => `备份 ${item.metadata.name}`), ...schedules.filter(item => item.spec?.template?.storageLocation === name).map(item => `计划 ${item.metadata.name}`)]
 }
@@ -87,10 +94,13 @@ export function locationResource(form, original) {
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Endpoint 必须为不含路径和凭据的 HTTP(S) 地址')
   if (prefix && (prefix.startsWith('/') || prefix.endsWith('/') || prefix.split('/').includes('..'))) throw new Error('Prefix 不能以斜杠开头或结尾，也不能包含 .. 路径')
   if (!['ReadWrite', 'ReadOnly'].includes(accessMode)) throw new Error('请选择存储位置模式')
+  const objectStorage = { ...original?.spec?.objectStorage, bucket: bucket.trim() }
+  if (prefix) objectStorage.prefix = prefix
+  else delete objectStorage.prefix
   return {
     apiVersion: 'velero.io/v1', kind: 'BackupStorageLocation',
-    metadata: { name, labels: { ...(original?.metadata?.labels || {}), [LOCATION_LABEL]: 'true' } },
-    spec: { provider: 'aws', default: false, accessMode, objectStorage: { bucket: bucket.trim(), ...(prefix ? { prefix } : {}) }, credential: { name: locationSecretName(name), key: 'cloud' }, config: { region: region.trim(), s3ForcePathStyle: String(Boolean(forcePathStyle)), s3Url: endpoint.trim() } },
+    metadata: { name, ...(original?.metadata?.annotations ? { annotations: original.metadata.annotations } : {}), labels: { ...(original?.metadata?.labels || {}), ...(!original ? { [LOCATION_LABEL]: 'true' } : {}) } },
+    spec: { ...original?.spec, provider: 'aws', default: false, accessMode, objectStorage, credential: original?.spec?.credential || { name: locationSecretName(name), key: 'cloud' }, config: { ...original?.spec?.config, region: region.trim(), s3ForcePathStyle: String(Boolean(forcePathStyle)), s3Url: endpoint.trim() } },
   }
 }
 export function locationCredential(name, accessKey, secretKey) {

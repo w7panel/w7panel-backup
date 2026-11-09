@@ -30,7 +30,7 @@ For external S3, set `localS3.enabled=false`, provide
 `velero.configuration.backupStorageLocation` and
 `velero.configuration.defaultBackupStorageLocation`, and set
 `velero.credentials.existingSecret` to a separately managed Secret. The page
-continues to show that Helm-managed location as read-only. UI-created locations keep credentials in dedicated Kubernetes Secrets and require the W7Panel k8s-proxy identity to create, patch, and delete Secrets in the Velero namespace. Referenced locations cannot be deleted through the UI.
+continues to show that Helm-managed location as read-only. The page can also edit and delete manually created S3/COS locations, using their existing credential Secret. Deletion removes that Secret only when no other storage location shares it. The W7Panel k8s-proxy identity must be able to create, patch, and delete Secrets in the Velero namespace. Locations referenced by backups or schedules cannot be deleted through the UI.
 
 ## Upgrade from bundled MinIO
 

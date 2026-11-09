@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { backupResource, downloadEndpointIssue, downloadRequestResource, isMicroappRuntime, localProxyPath, locationCredential, locationReferences, locationResource, managedLocation, secretPath, writableLocation, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
+import { backupResource, downloadEndpointIssue, downloadRequestResource, editableLocation, isMicroappRuntime, localProxyPath, locationCredential, locationReferences, locationResource, managedLocation, secretPath, sharedLocationCredential, writableLocation, restoreLocationIssue, restoreResource, scheduleResource, veleroDeploymentPath, veleroPath } from '../src/velero.js'
 
 test('localhost uses the Vite Kubernetes proxy path', () => {
   assert.equal(isMicroappRuntime(), false)
@@ -66,11 +66,27 @@ test('page-created S3 location uses its own credential without exposing the key 
   assert.equal(JSON.stringify(location).includes('private-key'), false)
   assert.equal(credential.stringData.cloud, '[default]\naws_access_key_id=id\naws_secret_access_key=private-key')
   assert.equal(managedLocation(location), true)
+  assert.equal(editableLocation(location), true)
   assert.equal(writableLocation({ ...location, status: { phase: 'Available' } }), true)
   assert.equal(writableLocation({ ...location, spec: { ...location.spec, accessMode: 'ReadOnly' }, status: { phase: 'Available' } }), false)
   assert.equal(secretPath('velero', 'bsl-cos'), '/api/v1/namespaces/velero/secrets/bsl-cos')
   assert.throws(() => locationResource({ ...form, endpoint: 'https://user:password@cos.example.com' }), /Endpoint/)
   assert.throws(() => locationCredential('cos', 'id', 'with\nnewline'), /换行/)
+})
+
+test('manual S3 location keeps its credential and other config when edited', () => {
+  const original = { metadata: { name: 'cos' }, spec: { provider: 'aws', accessMode: 'ReadWrite', objectStorage: { bucket: 'old', prefix: 'old-prefix' }, credential: { name: 'cos-credentials', key: 'cloud' }, config: { region: 'ap-shanghai', s3Url: 'https://cos.ap-shanghai.myqcloud.com', publicUrl: 'https://download.example.com' } } }
+  const form = { name: 'cos', bucket: 'new', prefix: '', endpoint: 'https://cos.ap-shanghai.myqcloud.com', region: 'ap-shanghai', forcePathStyle: false, accessMode: 'ReadWrite' }
+  const updated = locationResource(form, original)
+  assert.equal(editableLocation(original), true)
+  assert.equal(managedLocation(updated), false)
+  assert.deepEqual(updated.spec.credential, original.spec.credential)
+  assert.equal(updated.spec.config.publicUrl, 'https://download.example.com')
+  assert.equal(updated.spec.objectStorage.prefix, undefined)
+  assert.equal(editableLocation({ ...original, metadata: { labels: { 'app.kubernetes.io/managed-by': 'Helm' } } }), false)
+  assert.equal(editableLocation({ ...original, metadata: { annotations: { 'meta.helm.sh/release-name': 'backup' } } }), false)
+  assert.equal(sharedLocationCredential(original, [original]), false)
+  assert.equal(sharedLocationCredential(original, [original, { metadata: { name: 'other' }, spec: { credential: original.spec.credential } }]), true)
 })
 
 test('storage location deletion finds backup and schedule references', () => {

@@ -25,8 +25,8 @@
           <a-table :data="schedules" :pagination="false" row-key="metadata.name"><template #columns><a-table-column title="计划名称" data-index="metadata.name" /><a-table-column title="Cron" data-index="spec.schedule" /><a-table-column title="范围"><template #cell="{ record }">{{ scope(record.spec?.template?.includedNamespaces) }}</template></a-table-column><a-table-column title="状态"><template #cell="{ record }"><a-tag :color="record.spec?.paused ? 'orange' : 'green'">{{ record.metadata?.annotations?.['backup.w7panel.io/sync-error'] ? '资源同步失败' : record.spec?.paused ? '已暂停' : '已启用' }}</a-tag></template></a-table-column><a-table-column title="操作" :width="250"><template #cell="{ record }"><a-space><a-button size="mini" @click="openSchedule(record)">编辑</a-button><a-button size="mini" @click="toggleSchedule(record)">{{ record.spec?.paused ? '恢复' : '暂停' }}</a-button><a-popconfirm content="删除后不再自动创建备份。" @ok="destroy('schedules', record.metadata.name)"><a-button size="mini" status="danger">删除</a-button></a-popconfirm></a-space></template></a-table-column></template></a-table>
         </a-tab-pane>
         <a-tab-pane key="locations" title="存储位置">
-          <section class="toolbar"><div><h2>对象存储</h2><p>Helm 管理的位置由部署配置维护；页面可管理自行新增的 S3/COS 位置。</p></div><a-button type="primary" @click="openLocation()">新增存储位置</a-button></section>
-          <a-table :data="locations" :pagination="false" row-key="metadata.name"><template #columns><a-table-column title="位置" data-index="metadata.name"><template #cell="{ record }"><strong>{{ record.metadata.name }}</strong><a-tag v-if="record.spec?.default" color="green" size="small">默认</a-tag></template></a-table-column><a-table-column title="Bucket"><template #cell="{ record }">{{ record.spec?.objectStorage?.bucket }}</template></a-table-column><a-table-column title="Endpoint"><template #cell="{ record }">{{ record.spec?.config?.s3Url }}</template></a-table-column><a-table-column title="模式"><template #cell="{ record }"><a-tag :color="record.spec?.accessMode === 'ReadOnly' ? 'orange' : 'green'">{{ record.spec?.accessMode || 'ReadWrite' }}</a-tag></template></a-table-column><a-table-column title="状态"><template #cell="{ record }"><a-tag :color="statusColor(record.status?.phase)">{{ record.status?.phase || '未知' }}</a-tag><small v-if="record.status?.message">{{ record.status.message }}</small></template></a-table-column><a-table-column title="操作"><template #cell="{ record }"><a-space v-if="managedLocation(record)"><a-button size="mini" @click="openLocation(record)">修改</a-button><a-popconfirm content="删除存储位置及页面创建的凭据？对象存储中的数据不会删除。" type="warning" @ok="deleteLocation(record)"><a-button size="mini" status="danger">删除</a-button></a-popconfirm></a-space></template></a-table-column></template></a-table>
+          <section class="toolbar"><div><h2>对象存储</h2><p>Helm 管理的位置由部署配置维护；页面可管理非 Helm 管理的 S3/COS 位置。</p></div><a-button type="primary" @click="openLocation()">新增存储位置</a-button></section>
+          <a-table :data="locations" :pagination="false" row-key="metadata.name"><template #columns><a-table-column title="位置" data-index="metadata.name"><template #cell="{ record }"><strong>{{ record.metadata.name }}</strong><a-tag v-if="record.spec?.default" color="green" size="small">默认</a-tag></template></a-table-column><a-table-column title="Bucket"><template #cell="{ record }">{{ record.spec?.objectStorage?.bucket }}</template></a-table-column><a-table-column title="Endpoint"><template #cell="{ record }">{{ record.spec?.config?.s3Url }}</template></a-table-column><a-table-column title="模式"><template #cell="{ record }"><a-tag :color="record.spec?.accessMode === 'ReadOnly' ? 'orange' : 'green'">{{ record.spec?.accessMode || 'ReadWrite' }}</a-tag></template></a-table-column><a-table-column title="状态"><template #cell="{ record }"><a-tag :color="statusColor(record.status?.phase)">{{ record.status?.phase || '未知' }}</a-tag><small v-if="record.status?.message">{{ record.status.message }}</small></template></a-table-column><a-table-column title="操作"><template #cell="{ record }"><a-space v-if="editableLocation(record)"><a-button size="mini" @click="openLocation(record)">修改</a-button><a-popconfirm content="删除存储位置及其凭据？对象存储中的数据不会删除。" type="warning" @ok="deleteLocation(record)"><a-button size="mini" status="danger">删除</a-button></a-popconfirm></a-space></template></a-table-column></template></a-table>
         </a-tab-pane>
       </a-tabs>
     </template>
@@ -55,7 +55,7 @@
 <script setup>
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, resolveComponent } from 'vue'
 import AppResourcePicker from './AppResourcePicker.vue'
-import { backupResource, create, discoverResources, downloadEndpointIssue, downloadRequestResource, get, list, locationCredential, locationReferences, locationResource, managedLocation, namespaces, remove, request, restoreLocationIssue, restoreResource, scheduleResource, secretPath, update, veleroDeployment, writableLocation } from './velero'
+import { backupResource, create, discoverResources, downloadEndpointIssue, downloadRequestResource, editableLocation, get, list, locationCredential, locationReferences, locationResource, namespaces, remove, request, restoreLocationIssue, restoreResource, scheduleResource, secretPath, sharedLocationCredential, update, veleroDeployment, writableLocation } from './velero'
 import { annotatedApps, appKey, appsForNamespaces, existingObjects, labelId, listAppGroups, liveAppObjects, loadArchiveObjects, loadBackupInventory, loadRestoreResults, markObjects, objectKey, selectedUnion, uniqueObjects } from './app-selection'
 
 const ScopePicker = defineComponent({ props: { modelValue: Array, items: Array }, emits: ['update:modelValue'], setup(props, { emit }) { const FormItem = resolveComponent('a-form-item'), Select = resolveComponent('a-select'); return () => h(FormItem, { label: '命名空间范围' }, { default: () => h(Select, { modelValue: props.modelValue, 'onUpdate:modelValue': value => emit('update:modelValue', value), options: (props.items || []).map(value => ({ label: value, value })), multiple: true, allowClear: true, placeholder: '留空表示全部命名空间' }) }) } })
@@ -257,7 +257,7 @@ async function saveSchedule() { await savingAction(async () => {
 async function toggleSchedule(record) { await savingAction(async () => { if (record.metadata?.annotations?.['backup.w7panel.io/sync-error']) throw new Error('应用资源同步失败，请先修复后再启用计划'); const body = resourceVersion(record, { ...record, spec: { ...record.spec, paused: !record.spec?.paused } }); await update(veleroNamespace.value, 'schedules', record.metadata.name, body); await load() }) }
 async function destroy(resource, name) { await savingAction(async () => { await remove(veleroNamespace.value, resource, name); await load() }) }
 function openLocation(record) {
-  if (record && !managedLocation(record)) return
+  if (record && !editableLocation(record)) return
   locationForm.value = record ? { original: record, name: record.metadata.name, bucket: record.spec.objectStorage.bucket, prefix: record.spec.objectStorage.prefix || '', endpoint: record.spec.config.s3Url, region: record.spec.config.region, forcePathStyle: record.spec.config.s3ForcePathStyle === 'true', accessMode: record.spec.accessMode || 'ReadWrite', accessKey: '', secretKey: '' } : { name: '', bucket: '', prefix: '', endpoint: '', region: '', forcePathStyle: false, accessMode: 'ReadWrite', accessKey: '', secretKey: '' }
   dialogs.value.location = true
 }
@@ -265,12 +265,13 @@ async function saveLocation() { await savingAction(async () => {
   const form = locationForm.value
   const namespace = veleroNamespace.value
   const original = form.original ? await get(namespace, 'backupstoragelocations', form.original.metadata.name) : null
-  if (original && (!managedLocation(original) || form.name !== original.metadata.name)) throw new Error('只能修改页面创建的存储位置，且不能更改名称')
+  if (original && (!editableLocation(original) || form.name !== original.metadata.name)) throw new Error('只能修改非 Helm 管理的 S3/COS 存储位置，且不能更改名称')
   const body = resourceVersion(original, locationResource(form, original))
   const secret = form.accessKey || form.secretKey || !original ? locationCredential(form.name, form.accessKey, form.secretKey) : null
   if (original) {
+    if (secret) await requireUnsharedCredential(namespace, original)
     await update(namespace, 'backupstoragelocations', form.name, body)
-    if (secret) await request(secretPath(namespace, secret.metadata.name), { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify({ stringData: secret.stringData }) })
+    if (secret) await request(secretPath(namespace, original.spec.credential.name), { method: 'PATCH', headers: { 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify({ stringData: { [original.spec.credential.key]: secret.stringData.cloud } }) })
   } else {
     await request(secretPath(namespace), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...secret, metadata: { ...secret.metadata, namespace } }) })
     try { await create(namespace, 'backupstoragelocations', body) }
@@ -280,13 +281,18 @@ async function saveLocation() { await savingAction(async () => {
   resetDialogs()
   await load()
 }) }
+async function requireUnsharedCredential(namespace, location) {
+  const { items = [] } = await list(namespace, 'backupstoragelocations')
+  if (sharedLocationCredential(location, items)) throw new Error('凭据仍被其他存储位置使用')
+}
 async function deleteLocation(record) { await savingAction(async () => {
   const namespace = veleroNamespace.value
   const current = await get(namespace, 'backupstoragelocations', record.metadata.name)
-  if (!managedLocation(current)) throw new Error('只能删除页面创建的存储位置')
+  if (!editableLocation(current)) throw new Error('只能删除非 Helm 管理的 S3/COS 存储位置')
   const [b, s] = await Promise.all([list(namespace, 'backups'), list(namespace, 'schedules')])
   const references = locationReferences(record.metadata.name, b.items || [], s.items || [])
   if (references.length) throw new Error(`存储位置仍被引用：${references.slice(0, 3).join('、')}`)
+  await requireUnsharedCredential(namespace, current)
   await remove(namespace, 'backupstoragelocations', record.metadata.name)
   try { await request(secretPath(namespace, current.spec.credential.name), { method: 'DELETE' }) }
   finally { await load() }
