@@ -10,8 +10,11 @@ metadata:
   annotations:
     helm.sh/resource-policy: keep
 spec:
-  accessModes: [ReadWriteOnce]
-  {{- with .Values.localS3.storageClass }}
+  {{- if not (has .Values.localS3.accessMode (list "ReadWriteOnce" "ReadWriteMany")) }}
+  {{- fail "localS3.accessMode must be ReadWriteOnce or ReadWriteMany" }}
+  {{- end }}
+  accessModes: [{{ .Values.localS3.accessMode }}]
+  {{- with default .Values.localS3.storageClass .Values.storageclass }}
   storageClassName: {{ . | quote }}
   {{- end }}
   resources:

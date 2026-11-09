@@ -15,7 +15,16 @@ helm upgrade --install w7panel-backup charts/w7panel-backup -n velero --create-n
 The chart generates and retains local S3 credentials in `local-s3-auth` and
 `local-s3-credentials`. Set `localS3.secretKey` before a first install if your
 secret management process requires a supplied value. The gateway stores buckets
-on the PVC selected by `localS3.storageClass` and `localS3.size`.
+on the PVC selected by `localS3.storageClass`, `localS3.accessMode`, and
+`localS3.size`. Set `localS3.accessMode=ReadWriteMany` only with a StorageClass
+that supports RWX; the default is `ReadWriteOnce`. The install
+parameter `storageclass` overrides `localS3.storageClass` for new installs; use
+the cluster's shared StorageClass (for example, `longhorn`) on multi-node
+clusters. Existing PVCs retain their original StorageClass and access mode;
+neither can be changed by upgrading the release.
+In the ZPK application, add a required startup parameter named `storageclass`
+with the default value `%STORAGE_CLASS_NAME%` so the install form offers the
+cluster's StorageClasses and passes the selected value to this chart.
 
 For external S3, set `localS3.enabled=false`, provide
 `velero.configuration.backupStorageLocation` and

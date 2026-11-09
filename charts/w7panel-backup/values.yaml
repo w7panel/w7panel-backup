@@ -1,7 +1,10 @@
+storageclass: ""
+
 localS3:
   enabled: true
   image: versity/versitygw:v1.10.0
   storageClass: local-path
+  accessMode: ReadWriteOnce
   size: 10Gi
   bucket: velero
   accessKey: w7panel-velero
